@@ -86,3 +86,15 @@ func TestJudgeAllAC(t *testing.T) {
 		t.Errorf("got %s, want AC", rep.Verdict)
 	}
 }
+
+func TestJudgeCE(t *testing.T) {
+	r := fakeRunner{"a": {Status: RunCompileError, Stderr: "error: x"}}
+	rep, err := Judge(context.Background(), r, "", []Case{{Input: "a"}, {Input: "b"}},
+		time.Second, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Verdict != CE || rep.CompileError != "error: x" || len(rep.Cases) != 0 {
+		t.Errorf("got %+v, want CE with no cases", rep)
+	}
+}
