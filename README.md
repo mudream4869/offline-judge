@@ -50,10 +50,9 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
   有 include 它的程式才會用到
 - wasi 版 libc++ 不支援例外：`throw` 直接 abort 判 RE，`catch` 不會被執行
 - 執行速度約為原生的 1/3，時間限制目前沒有依語言調整
-- 第一次使用要下載 clang（gzip 後約 27 MB）加上 PCH（約 10 MB）；編譯一次約 1 秒
-
-`-offline` 的 service worker 會在安裝時快取所有 assets（包含 clang），所以只用 Python
-的人也會在背景下載 clang。
+- 第一次選 C++ 時才下載 clang（gzip 後約 27 MB）加上 PCH（約 10 MB）；編譯一次約 1 秒
+- clang 與 PCH 放在 `dist/cpp/`，不在 `assets/` 裡，所以 `-offline` 的 service worker
+  不會預先快取它們：C++ 離線時不能用（瀏覽器的 HTTP 快取還在的話仍可能可以）
 
 ## 新增題目
 
@@ -79,13 +78,14 @@ scripts/build.sh serve    # http://localhost:3000
 ```
 
 `build.sh` 是包一層 toolgui 的 `go tool toolgui-wasm build|serve`，多做的事是把
-Pyodide、clang、WASI shim、PCH 與 `web/` 準備到 `.cache/assets`。跑過一次 `build.sh` 後，也可以直接用：
+Pyodide、WASI shim 與 `web/` 準備到 `.cache/assets`，並把 clang 與 PCH 放到 `dist/cpp/`。跑過一次 `build.sh` 後，也可以直接用：
 
 ```sh
 go tool toolgui-wasm serve -o dist -assets .cache/assets ./cmd/offline-judge
 ```
 
-直接 serve 時不帶 `-assets` 的話，頁面能開，但沒有 Python / C++ 環境可以執行。
+直接 serve 時不帶 `-assets` 的話，頁面能開，但沒有 Python / C++ 環境可以執行；
+`dist/cpp/` 要先由 `build.sh` 產生，C++ 才能用。
 
 `dist/` 是靜態網站，可直接放到 GitHub Pages（見 `.github/workflows/pages.yml`，
 需在 repo 設定把 Pages 來源設為 GitHub Actions）。

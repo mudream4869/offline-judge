@@ -31,13 +31,19 @@ fetch "@yowasp/clang@$CLANG_VERSION" "$CLANG"
 fetch "@bjorn3/browser_wasi_shim@$WASI_SHIM_VERSION" "$WASI"
 
 rm -rf "$ASSETS"
-mkdir -p "$ASSETS/pyodide" "$ASSETS/clang" "$ASSETS/wasi"
+mkdir -p "$ASSETS/pyodide" "$ASSETS/wasi"
 cp web/* "$ASSETS/"
 for f in pyodide.mjs pyodide.asm.mjs pyodide.asm.wasm python_stdlib.zip pyodide-lock.json; do
   cp "$PYO/$f" "$ASSETS/pyodide/"
 done
-cp "$CLANG"/gen/*.js "$CLANG"/gen/*.wasm "$CLANG"/gen/*.tar "$ASSETS/clang/"
 cp "$WASI"/dist/*.js "$ASSETS/wasi/"
+
+# clang and the PCH go to dist/cpp/, outside assets/: the service worker
+# precaches all of assets/, and they should only download when C++ is picked.
+LAZY=dist/cpp
+rm -rf "$LAZY"
+mkdir -p "$LAZY/clang"
+cp "$CLANG"/gen/*.js "$CLANG"/gen/*.wasm "$CLANG"/gen/*.tar "$LAZY/clang/"
 
 # Precompiled <bits/stdc++.h>, rebuilt when the header, flags or clang change.
 key=$( (cat web/stdc++.h web/cppflags.mjs; echo "$CLANG_VERSION") | sha256sum | cut -c1-16)
@@ -46,6 +52,6 @@ if [ ! -f "$PCH" ]; then
   node scripts/mkpch.mjs "$CLANG/gen/bundle.js" web/stdc++.h "$PCH.tmp"
   mv "$PCH.tmp" "$PCH"
 fi
-cp "$PCH" "$ASSETS/stdc++.h.pch"
+cp "$PCH" "$LAZY/stdc++.h.pch"
 
 go tool toolgui-wasm "$MODE" -o dist -ldflags "-s -w" -assets "$ASSETS" -offline ./cmd/offline-judge
