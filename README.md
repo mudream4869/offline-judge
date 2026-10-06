@@ -58,6 +58,15 @@ scripts/build.sh          # 輸出到 dist/
 scripts/build.sh serve    # http://localhost:3000
 ```
 
+`build.sh` 是包一層 toolgui 的 `go tool toolgui-wasm build|serve`，多做的事是把
+Pyodide 與 `web/` 準備到 `.cache/assets`。跑過一次 `build.sh` 後，也可以直接用：
+
+```sh
+go tool toolgui-wasm serve -o dist -assets .cache/assets ./cmd/offline-judge
+```
+
+直接 serve 時不帶 `-assets` 的話，頁面能開，但沒有 Python 環境可以執行。
+
 `dist/` 是靜態網站，可直接放到 GitHub Pages（見 `.github/workflows/pages.yml`，
 需在 repo 設定把 Pages 來源設為 GitHub Actions）。
 需要 https 或 localhost（toolgui 的 OPFS 需要 secure context）。
