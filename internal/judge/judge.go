@@ -16,6 +16,7 @@ const (
 	WA  Verdict = "WA"
 	TLE Verdict = "TLE"
 	RE  Verdict = "RE"
+	CE  Verdict = "CE"
 	// Skip marks cases not run after a TLE: each TLE costs a runtime restart.
 	Skip Verdict = "SKIP"
 )
@@ -27,6 +28,8 @@ const (
 	RunOK      RunStatus = "ok"
 	RunError   RunStatus = "re"
 	RunTimeout RunStatus = "tle"
+	// RunCompileError: Stderr holds the compiler output.
+	RunCompileError RunStatus = "ce"
 )
 
 // RunResult is what a Runner reports for one execution.
@@ -63,9 +66,11 @@ type CaseResult struct {
 type Report struct {
 	Verdict Verdict
 	Cases   []CaseResult
+	// CompileError is the compiler output when Verdict is CE.
+	CompileError string
 }
 
-// Judge runs code on each case, stopping after the first TLE.
+// Judge runs code on each case, stopping after the first TLE or a CE.
 // The overall verdict is the first non-AC one.
 // progress, if not nil, is called after each case.
 func Judge(ctx context.Context, r Runner, code string, cases []Case,
@@ -76,6 +81,9 @@ func Judge(ctx context.Context, r Runner, code string, cases []Case,
 		res, err := r.Run(ctx, code, c.Input, limit)
 		if err != nil {
 			return rep, err
+		}
+		if res.Status == RunCompileError {
+			return Report{Verdict: CE, CompileError: res.Stderr}, nil
 		}
 
 		cr := CaseResult{

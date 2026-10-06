@@ -1,11 +1,12 @@
 //go:build js && wasm
 
-// Command offline-judge is a Python judge that runs entirely in the browser.
+// Command offline-judge is a Python / C++ judge that runs entirely in the browser.
 package main
 
 import (
 	"fmt"
 	"log"
+	"sync"
 	"syscall/js"
 	"time"
 
@@ -17,15 +18,51 @@ import (
 	"github.com/mudream4869/offline-judge/problems"
 )
 
-const (
-	defaultCode = "import sys\ninput = sys.stdin.readline\n\n"
-	// Inputs/outputs longer than this are cut in the result view.
-	showLimit = 2000
-)
+// Inputs/outputs longer than this are cut in the result view.
+const showLimit = 2000
+
+type runner interface {
+	judge.Runner
+	Ready() bool
+}
+
+type lang struct {
+	name    string
+	id      string
+	code    string // default code
+	loading string // shown while the runtime loads
+	newRun  func() runner
+	once    sync.Once
+	run     runner
+}
+
+// runner starts the runtime on first use, so unused ones aren't downloaded.
+func (l *lang) runner() runner {
+	l.once.Do(func() { l.run = l.newRun() })
+	return l.run
+}
 
 var (
-	probs  []*problems.Problem
-	runner *PyRunner
+	probs []*problems.Problem
+	langs = []*lang{
+		{
+			name:    "Python",
+			id:      "py",
+			code:    "import sys\ninput = sys.stdin.readline\n\n",
+			loading: "載入中（首次約需數秒）",
+			newRun:  func() runner { return NewPyRunner(assetURL("pyworker.mjs")) },
+		},
+		{
+			name: "C++",
+			id:   "cpp",
+			code: "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n" +
+				"    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n\n}\n",
+			loading: "載入中（首次需下載約 27 MB 的 clang）",
+			newRun: func() runner {
+				return NewCppRunner(assetURL("cppcompile.mjs"), assetURL("cpprun.mjs"))
+			},
+		},
+	}
 )
 
 func Index(p *tgframe.Params) error {
@@ -40,10 +77,21 @@ func Index(p *tgframe.Params) error {
 	}
 	pr := probs[*sel]
 
-	if runner.Ready() {
-		tgcomp.Caption(p.Sidebar, "Python 環境：就緒")
+	names := make([]string, len(langs))
+	for i, l := range langs {
+		names[i] = l.name
+	}
+	li := tgcomp.Select(p.Sidebar, "語言", names, (&tgcomp.SelectConf{}).SetDefault(0))
+	if li == nil {
+		return nil
+	}
+	lg := langs[*li]
+	run := lg.runner()
+
+	if run.Ready() {
+		tgcomp.Caption(p.Sidebar, lg.name+" 環境：就緒")
 	} else {
-		tgcomp.Caption(p.Sidebar, "Python 環境：載入中（首次約需數秒）")
+		tgcomp.Caption(p.Sidebar, lg.name+" 環境："+lg.loading)
 	}
 
 	tgcomp.Markdown(p.Main, pr.Statement)
@@ -60,24 +108,27 @@ func Index(p *tgframe.Params) error {
 
 	tgcomp.Divider(p.Main)
 
-	// One textarea per problem, so switching problems keeps the code.
-	code := tgcomp.Textarea(p.Main, "程式碼（Python）", &tgcomp.TextareaConf{
-		ID:      "code_" + pr.ID,
+	// One textarea per problem and language, so switching keeps the code.
+	key := lg.id + "_" + pr.ID
+	code := tgcomp.Textarea(p.Main, "程式碼（"+lg.name+"）", &tgcomp.TextareaConf{
+		ID:      "code_" + key,
 		Height:  16,
-		Default: defaultCode,
+		Default: lg.code,
 	})
 
 	submitTab, customTab := tgcomp.Tab2(p.Main, "提交", "自訂輸入")
-	submitPanel(p, submitTab, pr, code)
-	customPanel(p, customTab, pr, code)
+	submitPanel(p, submitTab, run, key, pr, code)
+	customPanel(p, customTab, run, key, pr, code)
 	return nil
 }
 
-func submitPanel(p *tgframe.Params, c *tgframe.Container, pr *problems.Problem, code string) {
-	key := "report_" + pr.ID
-	if tgcomp.Button(c, "提交", &tgcomp.ButtonConf{ID: "submit_" + pr.ID}) {
+func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, key string,
+	pr *problems.Problem, code string) {
+
+	repKey := "report_" + key
+	if tgcomp.Button(c, "提交", &tgcomp.ButtonConf{ID: "submit_" + key}) {
 		st := tgcomp.Status(c, "評測中…")
-		rep, err := judge.Judge(p.Context, runner, code, pr.Cases, pr.TimeLimit,
+		rep, err := judge.Judge(p.Context, run, code, pr.Cases, pr.TimeLimit,
 			func(done int, cr judge.CaseResult) {
 				st.Update(fmt.Sprintf("評測中 %d/%d", done, len(pr.Cases)))
 				st.Write(fmt.Sprintf("%s：%s（%s）", cr.Name, cr.Verdict, fmtTime(cr.Time)))
@@ -88,10 +139,10 @@ func submitPanel(p *tgframe.Params, c *tgframe.Container, pr *problems.Problem, 
 			return
 		}
 		st.Complete("評測完成")
-		p.State.Set(key, &rep)
+		p.State.Set(repKey, &rep)
 	}
 
-	rep, ok := p.State.Get[*judge.Report](key)
+	rep, ok := p.State.Get[*judge.Report](repKey)
 	if !ok || rep == nil {
 		return
 	}
@@ -103,6 +154,10 @@ func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report) {
 		tgcomp.MessageSuccess(c, "AC：全部通過")
 	} else {
 		tgcomp.MessageDanger(c, string(rep.Verdict)+"："+verdictName(rep.Verdict))
+	}
+	if rep.Verdict == judge.CE {
+		tgcomp.Code(c, cut(rep.CompileError), &tgcomp.CodeConf{Language: "text"})
+		return
 	}
 
 	rows := make([][]string, len(rep.Cases))
@@ -138,18 +193,20 @@ func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report) {
 	}
 }
 
-func customPanel(p *tgframe.Params, c *tgframe.Container, pr *problems.Problem, code string) {
+func customPanel(p *tgframe.Params, c *tgframe.Container, run runner, key string,
+	pr *problems.Problem, code string) {
+
 	stdin := tgcomp.Textarea(c, "輸入", &tgcomp.TextareaConf{
-		ID:      "stdin_" + pr.ID,
+		ID:      "stdin_" + key,
 		Height:  6,
 		Default: pr.Cases[0].Input,
 	})
-	if !tgcomp.Button(c, "執行", &tgcomp.ButtonConf{ID: "run_" + pr.ID}) {
+	if !tgcomp.Button(c, "執行", &tgcomp.ButtonConf{ID: "run_" + key}) {
 		return
 	}
 
 	done := tgcomp.Spinner(c, "執行中…")
-	res, err := runner.Run(p.Context, code, stdin, pr.TimeLimit)
+	res, err := run.Run(p.Context, code, stdin, pr.TimeLimit)
 	done()
 	if err != nil {
 		tgcomp.MessageDanger(c, err.Error())
@@ -157,6 +214,10 @@ func customPanel(p *tgframe.Params, c *tgframe.Container, pr *problems.Problem, 
 	}
 
 	switch {
+	case res.Status == judge.RunCompileError:
+		tgcomp.MessageDanger(c, "CE：編譯錯誤")
+		tgcomp.Code(c, cut(res.Stderr), &tgcomp.CodeConf{Language: "text"})
+		return
 	case res.Status == judge.RunTimeout || res.Time > pr.TimeLimit:
 		tgcomp.MessageWarning(c, "TLE："+fmtTime(res.Time))
 	case res.Status == judge.RunError:
@@ -180,6 +241,8 @@ func verdictName(v judge.Verdict) string {
 		return "超過時間限制"
 	case judge.RE:
 		return "執行錯誤"
+	case judge.CE:
+		return "編譯錯誤"
 	}
 	return ""
 }
@@ -195,11 +258,11 @@ func cut(s string) string {
 	return s[:showLimit] + "\n…（已截斷）"
 }
 
-// workerURL resolves the Python worker against this (Go) worker's script,
+// assetURL resolves a web/ file against this (Go) worker's script,
 // which toolgui-wasm puts in static/.
-func workerURL() string {
+func assetURL(name string) string {
 	href := js.Global().Get("location").Get("href")
-	return js.Global().Get("URL").New("../assets/pyworker.mjs", href).Get("href").String()
+	return js.Global().Get("URL").New("../assets/"+name, href).Get("href").String()
 }
 
 func main() {
@@ -208,7 +271,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	runner = NewPyRunner(workerURL())
+	// Python is the default language: start loading it now.
+	langs[0].runner()
 
 	app := tgframe.NewApp()
 	app.AddPage("index", "Offline Judge", Index)
