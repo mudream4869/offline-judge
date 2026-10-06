@@ -65,26 +65,43 @@ var (
 	}
 )
 
-func Index(p *tgframe.Params) error {
-	titles := make([]string, len(probs))
-	for i, pr := range probs {
-		titles[i] = pr.Title
-	}
-	sel := tgcomp.Select(p.Sidebar, "題目", titles, (&tgcomp.SelectConf{}).SetDefault(0))
-	if sel == nil {
-		tgcomp.Text(p.Main, "請選擇題目")
-		return nil
-	}
-	pr := probs[*sel]
+const intro = `完全在瀏覽器裡執行的 Python / C++ 解題系統，不需要後端，載入後可離線使用。
 
+- 從下方或左側選一題，寫好程式後「提交」即可評測
+- 「自訂輸入」可以用自己的輸入先跑跑看
+- 測資不保密，失敗時會顯示第一筆錯誤的完整輸入與輸出`
+
+// Index is the home page: intro and problem list.
+func Index(p *tgframe.Params) error {
+	tgcomp.Title(p.Main, "Offline Judge")
+	tgcomp.Markdown(p.Main, intro)
+
+	tgcomp.Subtitle(p.Main, "題目")
+	for _, pr := range probs {
+		tgcomp.Link(p.Main, pr.Title, "#/"+pr.ID)
+		tgcomp.Caption(p.Main, fmt.Sprintf("時間限制 %d ms", pr.TimeLimit.Milliseconds()))
+	}
+	return nil
+}
+
+// problemPage shows one problem with its editor and judge.
+func problemPage(pr *problems.Problem) tgframe.RunFunc {
+	return func(p *tgframe.Params) error {
+		return showProblem(p, pr)
+	}
+}
+
+func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	names := make([]string, len(langs))
 	for i, l := range langs {
 		names[i] = l.name
 	}
-	li := tgcomp.Select(p.Sidebar, "語言", names, (&tgcomp.SelectConf{}).SetDefault(0))
+	li := tgcomp.Select(p.Sidebar, "語言", names,
+		(&tgcomp.SelectConf{}).SetDefault(memo.getLang()))
 	if li == nil {
 		return nil
 	}
+	memo.setLang(*li)
 	lg := langs[*li]
 	run := lg.runner()
 
@@ -113,8 +130,9 @@ func Index(p *tgframe.Params) error {
 	code := tgcomp.Textarea(p.Main, "程式碼（"+lg.name+"）", &tgcomp.TextareaConf{
 		ID:      "code_" + key,
 		Height:  16,
-		Default: lg.code,
+		Default: memo.getText("code_"+key, lg.code),
 	})
+	memo.setText("code_"+key, code)
 
 	submitTab, customTab := tgcomp.Tab2(p.Main, "提交", "自訂輸入")
 	submitPanel(p, submitTab, run, key, pr, code)
@@ -125,7 +143,6 @@ func Index(p *tgframe.Params) error {
 func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, key string,
 	pr *problems.Problem, code string) {
 
-	repKey := "report_" + key
 	if tgcomp.Button(c, "提交", &tgcomp.ButtonConf{ID: "submit_" + key}) {
 		st := tgcomp.Status(c, "評測中…")
 		rep, err := judge.Judge(p.Context, run, code, pr.Cases, pr.TimeLimit,
@@ -139,11 +156,11 @@ func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, key string
 			return
 		}
 		st.Complete("評測完成")
-		p.State.Set(repKey, &rep)
+		memo.setReport(key, &rep)
 	}
 
-	rep, ok := p.State.Get[*judge.Report](repKey)
-	if !ok || rep == nil {
+	rep := memo.getReport(key)
+	if rep == nil {
 		return
 	}
 	showReport(c, pr, rep)
@@ -199,8 +216,9 @@ func customPanel(p *tgframe.Params, c *tgframe.Container, run runner, key string
 	stdin := tgcomp.Textarea(c, "輸入", &tgcomp.TextareaConf{
 		ID:      "stdin_" + key,
 		Height:  6,
-		Default: pr.Cases[0].Input,
+		Default: memo.getText("stdin_"+key, pr.Cases[0].Input),
 	})
+	memo.setText("stdin_"+key, stdin)
 	if !tgcomp.Button(c, "執行", &tgcomp.ButtonConf{ID: "run_" + key}) {
 		return
 	}
@@ -231,6 +249,56 @@ func customPanel(p *tgframe.Params, c *tgframe.Container, run runner, key string
 		tgcomp.Text(c, "stderr")
 		tgcomp.Code(c, cut(res.Stderr), &tgcomp.CodeConf{Language: "text"})
 	}
+}
+
+// memo keeps inputs and results across pages,
+// since toolgui starts each page with an empty state.
+var memo = &store{text: map[string]string{}, reports: map[string]*judge.Report{}}
+
+type store struct {
+	mu      sync.Mutex
+	lang    int
+	text    map[string]string
+	reports map[string]*judge.Report
+}
+
+func (s *store) getLang() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lang
+}
+
+func (s *store) setLang(i int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lang = i
+}
+
+func (s *store) getText(key, def string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if v, ok := s.text[key]; ok {
+		return v
+	}
+	return def
+}
+
+func (s *store) setText(key, v string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.text[key] = v
+}
+
+func (s *store) getReport(key string) *judge.Report {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reports[key]
+}
+
+func (s *store) setReport(key string, r *judge.Report) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reports[key] = r
 }
 
 func verdictName(v judge.Verdict) string {
@@ -275,7 +343,11 @@ func main() {
 	langs[0].runner()
 
 	app := tgframe.NewApp()
-	app.AddPage("index", "Offline Judge", Index)
+	app.SetTitle("Offline Judge")
+	app.AddPageByConfig(&tgframe.PageConfig{Name: "index", Title: "首頁", Emoji: "🏠"}, Index)
+	for _, pr := range probs {
+		app.AddPage(pr.ID, pr.Title, problemPage(pr))
+	}
 	app.SetHashPageNameMode(true)
 	tgwasm.NewExecutor(app).Run()
 }

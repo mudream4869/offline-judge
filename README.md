@@ -7,6 +7,7 @@
 - 執行 C++（PoC）：[YoWASP clang](https://yowasp.org/) 編成 WASI wasm，再用
   [browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim) 在可砍掉的 worker 裡執行
 - 測資不保密，題目與測資直接嵌在 wasm 裡
+- 首頁有簡介與題目列表，每題是一個頁面（`#/<題目資料夾名稱>`）
 
 ## 架構
 
