@@ -8,6 +8,7 @@
   [browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim) 在可砍掉的 worker 裡執行
 - 測資不保密，題目與測資直接嵌在 wasm 裡
 - 首頁有簡介與題目列表，每題是一個頁面（`#/<題目資料夾名稱>`）
+- 程式碼、自訂輸入、語言選擇與提交紀錄存在瀏覽器的 IndexedDB（`offline-judge`），重新整理後還在
 
 ## 架構
 
@@ -43,6 +44,15 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 | SKIP | 第一筆 TLE 之後的測資不再執行（每次 TLE 都要重載 Pyodide） |
 
 尚未支援 MLE。
+
+## 保存
+
+| object store | 內容 |
+| --- | --- |
+| `drafts` | key 為 `code_<語言>_<題目>`、`stdin_<語言>_<題目>`、`lang`，值為字串；沒改過的不存，預設值改了會跟著變 |
+| `submissions` | 每次提交一筆：題目、語言、程式碼、時間、結果；只留第一筆失敗的輸出且截斷，以 `problem` 為索引 |
+
+「紀錄」分頁顯示該題最近 50 筆提交。IndexedDB 無法使用（例如被瀏覽器封鎖）時照常運作，只是不會保存。
 
 ## C++ 的限制（PoC）
 
