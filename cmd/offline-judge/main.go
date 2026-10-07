@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/voilelab/toolgui/toolgui/tgcomp"
+	"github.com/voilelab/toolgui/toolgui/tgcomp/tcutil"
 	"github.com/voilelab/toolgui/toolgui/tgframe"
 	"github.com/voilelab/toolgui/toolgui/tgwasm"
 
@@ -29,6 +30,7 @@ type runner interface {
 type lang struct {
 	name    string
 	id      string
+	hl      string // code highlight language
 	code    string // default code
 	loading string // shown while the runtime loads
 	newRun  func() runner
@@ -48,6 +50,7 @@ var (
 		{
 			name:    "Python",
 			id:      "py",
+			hl:      "python",
 			code:    "import sys\ninput = sys.stdin.readline\n\n",
 			loading: "載入中（首次約需數秒）",
 			newRun:  func() runner { return NewPyRunner(assetURL("pyworker.mjs")) },
@@ -55,6 +58,7 @@ var (
 		{
 			name: "C++",
 			id:   "cpp",
+			hl:   "cpp",
 			code: "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n" +
 				"    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n\n}\n",
 			loading: "載入中（首次需下載約 27 MB 的 clang）",
@@ -134,14 +138,22 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	})
 	memo.setText("code_"+key, code)
 
-	submitTab, customTab := tgcomp.Tab2(p.Main, "提交", "自訂輸入")
-	submitPanel(p, submitTab, run, key, pr, code)
+	// Before drawing, so every panel sees the deletion.
+	for _, s := range memo.submissions(pr.ID) {
+		if tgcomp.ButtonClicked(p.Main, delLabel, delConf(s.ID)) {
+			memo.deleteSubmission(pr.ID, s.ID)
+		}
+	}
+
+	submitTab, customTab, histTab := tgcomp.Tab3(p.Main, "提交", "自訂輸入", "紀錄")
+	submitPanel(p, submitTab, run, lg, key, pr, code)
 	customPanel(p, customTab, run, key, pr, code)
+	historyPanel(histTab, pr)
 	return nil
 }
 
-func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, key string,
-	pr *problems.Problem, code string) {
+func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
+	key string, pr *problems.Problem, code string) {
 
 	if tgcomp.Button(c, "提交", &tgcomp.ButtonConf{ID: "submit_" + key}) {
 		st := tgcomp.Status(c, "評測中…")
@@ -156,17 +168,81 @@ func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, key string
 			return
 		}
 		st.Complete("評測完成")
-		memo.setReport(key, &rep)
+		memo.addSubmission(&submission{
+			Problem: pr.ID,
+			Lang:    lg.id,
+			Code:    code,
+			At:      time.Now(),
+			Report:  slim(rep),
+		})
 	}
 
-	rep := memo.getReport(key)
-	if rep == nil {
-		return
+	// Latest submission in this language.
+	for _, s := range memo.submissions(pr.ID) {
+		if s.Lang == lg.id {
+			showReport(c, pr, &s.Report, key)
+			return
+		}
 	}
-	showReport(c, pr, rep)
 }
 
-func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report) {
+// historyPanel lists recent submissions of a problem in all languages.
+func historyPanel(c *tgframe.Container, pr *problems.Problem) {
+	subs := memo.submissions(pr.ID)
+	if len(subs) == 0 {
+		tgcomp.Caption(c, "還沒有提交紀錄")
+		return
+	}
+	tgcomp.Caption(c, fmt.Sprintf("最近 %d 筆提交，存在這個瀏覽器裡", len(subs)))
+	for _, s := range subs {
+		lg := langByID(s.Lang)
+		title := fmt.Sprintf("#%d  %s  %s  %s", s.ID, s.At.Format("2006-01-02 15:04:05"),
+			lg.name, s.Report.Verdict)
+		if s.Report.Verdict != judge.CE {
+			title += "  " + fmtTime(maxTime(&s.Report))
+		}
+		id := fmt.Sprintf("sub_%d", s.ID)
+		box := tgcomp.Expand(c, title, false, &tgcomp.ExpandConf{ID: id})
+		tgcomp.Code(box, s.Code, &tgcomp.CodeConf{Language: lg.hl})
+		showReport(box, pr, &s.Report, id)
+		tgcomp.Button(box, delLabel, delConf(s.ID))
+	}
+}
+
+const delLabel = "刪除這筆紀錄"
+
+func delConf(id int) *tgcomp.ButtonConf {
+	return &tgcomp.ButtonConf{ID: fmt.Sprintf("del_%d", id), Color: tcutil.ColorDanger}
+}
+
+// slim keeps only what showReport shows, so stored reports stay small.
+func slim(rep judge.Report) judge.Report {
+	rep.CompileError = cut(rep.CompileError)
+	cases := make([]judge.CaseResult, len(rep.Cases))
+	shown := false
+	for i, cr := range rep.Cases {
+		if cr.Verdict == judge.AC || shown {
+			cr.Stdout, cr.Stderr = "", ""
+		} else {
+			shown = true
+			cr.Stdout, cr.Stderr = cut(cr.Stdout), cut(cr.Stderr)
+		}
+		cases[i] = cr
+	}
+	rep.Cases = cases
+	return rep
+}
+
+func maxTime(rep *judge.Report) time.Duration {
+	var t time.Duration
+	for _, cr := range rep.Cases {
+		t = max(t, cr.Time)
+	}
+	return t
+}
+
+// showReport draws rep; id keeps its components unique on the page.
+func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report, id string) {
 	if rep.Verdict == judge.AC {
 		tgcomp.MessageSuccess(c, "AC：全部通過")
 	} else {
@@ -193,7 +269,8 @@ func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report) {
 			continue
 		}
 		tc := pr.Cases[i]
-		box := tgcomp.Expand(c, "第一筆失敗："+cr.Name, true)
+		box := tgcomp.Expand(c, "第一筆失敗："+cr.Name, true,
+			&tgcomp.ExpandConf{ID: "fail_" + id})
 		tgcomp.Text(box, "輸入")
 		tgcomp.Code(box, cut(tc.Input), &tgcomp.CodeConf{Language: "text"})
 		tgcomp.Text(box, "預期輸出")
@@ -251,54 +328,114 @@ func customPanel(p *tgframe.Params, c *tgframe.Container, run runner, key string
 	}
 }
 
-// memo keeps inputs and results across pages,
-// since toolgui starts each page with an empty state.
-var memo = &store{text: map[string]string{}, reports: map[string]*judge.Report{}}
+// memo caches drafts and submissions, backed by IndexedDB.
+// toolgui starts each page with an empty state, so pages read from here.
+var memo = &store{text: map[string]string{}, subs: map[string][]*submission{}}
+
+// Submissions kept per problem in memory and shown in history.
+const historyLimit = 50
 
 type store struct {
-	mu      sync.Mutex
-	lang    int
-	text    map[string]string
-	reports map[string]*judge.Report
+	mu   sync.Mutex
+	text map[string]string
+	subs map[string][]*submission // by problem, newest first
 }
 
 func (s *store) getLang() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.lang
+	id := s.getText("lang", langs[0].id)
+	for i, l := range langs {
+		if l.id == id {
+			return i
+		}
+	}
+	return 0
 }
 
 func (s *store) setLang(i int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.lang = i
+	s.setText("lang", langs[i].id)
 }
 
+// getText returns the saved text, or def if there is none.
 func (s *store) getText(key, def string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if v, ok := s.text[key]; ok {
 		return v
 	}
-	return def
+	v, ok := loadDraft(key)
+	if !ok {
+		// Cached but not saved: an untouched draft follows a new default.
+		v = def
+	}
+	s.text[key] = v
+	return v
 }
 
 func (s *store) setText(key, v string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if old, ok := s.text[key]; ok && old == v {
+		return
+	}
 	s.text[key] = v
+	saveDraft(key, v)
 }
 
-func (s *store) getReport(key string) *judge.Report {
+func (s *store) submissions(problem string) []*submission {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.reports[key]
+	return s.loadSubs(problem)
 }
 
-func (s *store) setReport(key string, r *judge.Report) {
+func (s *store) loadSubs(problem string) []*submission {
+	if subs, ok := s.subs[problem]; ok {
+		return subs
+	}
+	subs, err := loadSubmissions(problem, historyLimit)
+	logDBErr("讀取", err)
+	s.subs[problem] = subs
+	return subs
+}
+
+func (s *store) addSubmission(sub *submission) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.reports[key] = r
+	subs := s.loadSubs(sub.Problem)
+	if err := saveSubmission(sub); err != nil {
+		logDBErr("寫入", err)
+		// Unsaved: number it after the newest so it still shows.
+		sub.ID = 1
+		if len(subs) > 0 {
+			sub.ID = subs[0].ID + 1
+		}
+	}
+	subs = append([]*submission{sub}, subs...)
+	if len(subs) > historyLimit {
+		subs = subs[:historyLimit]
+	}
+	s.subs[sub.Problem] = subs
+}
+
+func (s *store) deleteSubmission(problem string, id int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	deleteSubmission(id)
+	subs := s.loadSubs(problem)
+	for i, sub := range subs {
+		if sub.ID == id {
+			s.subs[problem] = append(subs[:i:i], subs[i+1:]...)
+			break
+		}
+	}
+}
+
+func langByID(id string) *lang {
+	for _, l := range langs {
+		if l.id == id {
+			return l
+		}
+	}
+	return &lang{name: id, id: id}
 }
 
 func verdictName(v judge.Verdict) string {
