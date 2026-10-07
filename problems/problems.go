@@ -1,4 +1,4 @@
-// Package problems embeds the problem set.
+// Package problems parses problem sets.
 //
 // Each problem is a directory:
 //
@@ -8,7 +8,6 @@
 package problems
 
 import (
-	"embed"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -19,9 +18,6 @@ import (
 
 	"github.com/mudream4869/offline-judge/internal/judge"
 )
-
-//go:embed */problem.json */statement.md */tests
-var data embed.FS
 
 // Problem is one problem with its tests.
 type Problem struct {
@@ -43,9 +39,30 @@ func (p *Problem) Samples() []judge.Case {
 	return out
 }
 
+// Meta is what problem.json holds.
+type Meta struct {
+	Title     string
+	TimeLimit time.Duration
+}
+
 type meta struct {
 	Title       string `json:"title"`
 	TimeLimitMS int    `json:"time_limit_ms"`
+}
+
+// ParseMeta parses problem.json.
+func ParseMeta(bs []byte) (Meta, error) {
+	var m meta
+	if err := json.Unmarshal(bs, &m); err != nil {
+		return Meta{}, err
+	}
+	if m.TimeLimitMS <= 0 {
+		m.TimeLimitMS = 1000
+	}
+	return Meta{
+		Title:     m.Title,
+		TimeLimit: time.Duration(m.TimeLimitMS) * time.Millisecond,
+	}, nil
 }
 
 // Load reads every problem in fsys, sorted by id.
@@ -60,18 +77,22 @@ func Load(fsys fs.FS) ([]*Problem, error) {
 		if !e.IsDir() {
 			continue
 		}
-		p, err := loadOne(fsys, e.Name())
+		p, err := LoadOne(fsys, e.Name())
 		if err != nil {
-			return nil, fmt.Errorf("problem %s: %w", e.Name(), err)
+			return nil, err
 		}
 		ps = append(ps, p)
 	}
 	return ps, nil
 }
 
-// All loads the embedded problems.
-func All() ([]*Problem, error) {
-	return Load(data)
+// LoadOne reads the problem in directory id of fsys.
+func LoadOne(fsys fs.FS, id string) (*Problem, error) {
+	p, err := loadOne(fsys, id)
+	if err != nil {
+		return nil, fmt.Errorf("problem %s: %w", id, err)
+	}
+	return p, nil
 }
 
 func loadOne(fsys fs.FS, id string) (*Problem, error) {
@@ -79,12 +100,9 @@ func loadOne(fsys fs.FS, id string) (*Problem, error) {
 	if err != nil {
 		return nil, err
 	}
-	var m meta
-	if err := json.Unmarshal(bs, &m); err != nil {
+	m, err := ParseMeta(bs)
+	if err != nil {
 		return nil, err
-	}
-	if m.TimeLimitMS <= 0 {
-		m.TimeLimitMS = 1000
 	}
 
 	st, err := fs.ReadFile(fsys, path.Join(id, "statement.md"))
@@ -101,7 +119,7 @@ func loadOne(fsys fs.FS, id string) (*Problem, error) {
 		ID:        id,
 		Title:     m.Title,
 		Statement: string(st),
-		TimeLimit: time.Duration(m.TimeLimitMS) * time.Millisecond,
+		TimeLimit: m.TimeLimit,
 		Cases:     cases,
 	}, nil
 }

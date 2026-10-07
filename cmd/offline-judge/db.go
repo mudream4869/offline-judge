@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mudream4869/offline-judge/internal/judge"
+	"github.com/mudream4869/offline-judge/internal/source"
 )
 
 // IndexedDB keeps drafts and submissions across reloads.
@@ -19,9 +20,11 @@ import (
 
 const (
 	dbName     = "offline-judge"
-	dbVersion  = 1
+	dbVersion  = 2
 	draftStore = "drafts"      // key → text
 	subStore   = "submissions" // {id, problem, lang, code, at, report}
+	indexStore = "indexes"     // source URL → source.Index as JSON
+	blobStore  = "blobs"       // git blob sha → Uint8Array
 )
 
 var (
@@ -51,12 +54,16 @@ func openDB() (js.Value, error) {
 	if err != nil {
 		return js.Value{}, err
 	}
-	upgrade := js.FuncOf(func(js.Value, []js.Value) any {
+	upgrade := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		d := req.Get("result")
-		d.Call("createObjectStore", draftStore)
-		s := d.Call("createObjectStore", subStore,
-			map[string]any{"keyPath": "id", "autoIncrement": true})
-		s.Call("createIndex", "problem", "problem")
+		if args[0].Get("oldVersion").Int() < 1 {
+			d.Call("createObjectStore", draftStore)
+			s := d.Call("createObjectStore", subStore,
+				map[string]any{"keyPath": "id", "autoIncrement": true})
+			s.Call("createIndex", "problem", "problem")
+		}
+		d.Call("createObjectStore", indexStore)
+		d.Call("createObjectStore", blobStore)
 		return nil
 	})
 	defer upgrade.Release()
@@ -251,4 +258,93 @@ func decodeSubmission(v js.Value) (*submission, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// idbStore is a source.Store in IndexedDB. What can't be written (e.g. over
+// quota) is kept in memory instead.
+type idbStore struct {
+	mem *source.MemStore
+}
+
+// newProblemStore returns a source.Store, in memory without IndexedDB.
+func newProblemStore() source.Store {
+	if db().IsUndefined() {
+		return source.NewMemStore()
+	}
+	return idbStore{mem: source.NewMemStore()}
+}
+
+func (st idbStore) Index(url string) (*source.Index, bool) {
+	if ix, ok := st.mem.Index(url); ok {
+		return ix, true
+	}
+	v, err := request(indexStore, "readonly", func(s js.Value) js.Value {
+		return s.Call("get", url)
+	})
+	logDBErr("讀取", err)
+	if err != nil || v.Type() != js.TypeString {
+		return nil, false
+	}
+	var ix source.Index
+	if err := json.Unmarshal([]byte(v.String()), &ix); err != nil {
+		log.Printf("略過損壞的題目列表快取：%v", err)
+		return nil, false
+	}
+	return &ix, true
+}
+
+func (st idbStore) SetIndex(url string, ix *source.Index) {
+	bs, err := json.Marshal(ix)
+	if err == nil {
+		_, err = request(indexStore, "readwrite", func(s js.Value) js.Value {
+			return s.Call("put", string(bs), url)
+		})
+	}
+	if err != nil {
+		logDBErr("寫入", err)
+		st.mem.SetIndex(url, ix)
+	}
+}
+
+func (st idbStore) Blob(sha string) ([]byte, bool) {
+	if bs, ok := st.mem.Blob(sha); ok {
+		return bs, true
+	}
+	v, err := request(blobStore, "readonly", func(s js.Value) js.Value {
+		return s.Call("get", sha)
+	})
+	logDBErr("讀取", err)
+	if err != nil || !v.InstanceOf(js.Global().Get("Uint8Array")) {
+		return nil, false
+	}
+	bs := make([]byte, v.Length())
+	js.CopyBytesToGo(bs, v)
+	return bs, true
+}
+
+func (st idbStore) SetBlob(sha string, data []byte) {
+	arr := js.Global().Get("Uint8Array").New(len(data))
+	js.CopyBytesToJS(arr, data)
+	_, err := request(blobStore, "readwrite", func(s js.Value) js.Value {
+		return s.Call("put", arr, sha)
+	})
+	if err != nil {
+		logDBErr("寫入", err)
+		st.mem.SetBlob(sha, data)
+	}
+}
+
+func (st idbStore) BlobSHAs() []string {
+	out := st.mem.BlobSHAs()
+	v, err := request(blobStore, "readonly", func(s js.Value) js.Value {
+		return s.Call("getAllKeys")
+	})
+	logDBErr("讀取", err)
+	if err != nil {
+		return out
+	}
+	for i := range v.Length() {
+		out = append(out, v.Index(i).String())
+	}
+	return out
 }
