@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/voilelab/toolgui/toolgui/tgcomp"
+	"github.com/voilelab/toolgui/toolgui/tgcomp/tcutil"
 	"github.com/voilelab/toolgui/toolgui/tgframe"
 	"github.com/voilelab/toolgui/toolgui/tgwasm"
 
@@ -137,6 +138,13 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	})
 	memo.setText("code_"+key, code)
 
+	// Before drawing, so every panel sees the deletion.
+	for _, s := range memo.submissions(pr.ID) {
+		if tgcomp.ButtonClicked(p.Main, delLabel, delConf(s.ID)) {
+			memo.deleteSubmission(pr.ID, s.ID)
+		}
+	}
+
 	submitTab, customTab, histTab := tgcomp.Tab3(p.Main, "提交", "自訂輸入", "紀錄")
 	submitPanel(p, submitTab, run, lg, key, pr, code)
 	customPanel(p, customTab, run, key, pr, code)
@@ -197,7 +205,14 @@ func historyPanel(c *tgframe.Container, pr *problems.Problem) {
 		box := tgcomp.Expand(c, title, false, &tgcomp.ExpandConf{ID: id})
 		tgcomp.Code(box, s.Code, &tgcomp.CodeConf{Language: lg.hl})
 		showReport(box, pr, &s.Report, id)
+		tgcomp.Button(box, delLabel, delConf(s.ID))
 	}
+}
+
+const delLabel = "刪除這筆紀錄"
+
+func delConf(id int) *tgcomp.ButtonConf {
+	return &tgcomp.ButtonConf{ID: fmt.Sprintf("del_%d", id), Color: tcutil.ColorDanger}
 }
 
 // slim keeps only what showReport shows, so stored reports stay small.
@@ -399,6 +414,19 @@ func (s *store) addSubmission(sub *submission) {
 		subs = subs[:historyLimit]
 	}
 	s.subs[sub.Problem] = subs
+}
+
+func (s *store) deleteSubmission(problem string, id int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	deleteSubmission(id)
+	subs := s.loadSubs(problem)
+	for i, sub := range subs {
+		if sub.ID == id {
+			s.subs[problem] = append(subs[:i:i], subs[i+1:]...)
+			break
+		}
+	}
 }
 
 func langByID(id string) *lang {

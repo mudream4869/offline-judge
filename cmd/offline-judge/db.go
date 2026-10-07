@@ -187,6 +187,13 @@ func saveSubmission(s *submission) error {
 	return nil
 }
 
+func deleteSubmission(id int) {
+	_, err := request(subStore, "readwrite", func(s js.Value) js.Value {
+		return s.Call("delete", id)
+	})
+	logDBErr("刪除", err)
+}
+
 // loadSubmissions returns up to n submissions of a problem, newest first.
 func loadSubmissions(problem string, n int) ([]*submission, error) {
 	st, err := objStore(subStore, "readonly")
