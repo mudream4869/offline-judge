@@ -297,12 +297,14 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 
 	tgcomp.Divider(p.Main)
 
-	// One textarea per problem and language, so switching keeps the code.
+	// One editor per problem and language, so switching keeps the code.
 	key := lg.id + "_" + pr.ID
-	code := tgcomp.Textarea(p.Main, "程式碼（"+lg.name+"）", &tgcomp.TextareaConf{
-		ID:      "code_" + key,
-		Height:  16,
-		Default: memo.getText("code_"+key, lg.code),
+	code := tgcomp.CodeInput(p.Main, "程式碼（"+lg.name+"）", &tgcomp.CodeInputConf{
+		ID:        "code_" + key,
+		Language:  lg.hl,
+		Height:    16,
+		MaxHeight: 40,
+		Default:   memo.getText("code_"+key, lg.code),
 	})
 	memo.setText("code_"+key, code)
 
