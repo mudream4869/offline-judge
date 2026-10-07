@@ -1,6 +1,8 @@
 package problems
 
 import (
+	"bytes"
+	"flag"
 	"os"
 	"testing"
 
@@ -36,5 +38,32 @@ func TestAll(t *testing.T) {
 				t.Errorf("%s/%s: output does not match itself", p.ID, c.Name)
 			}
 		}
+	}
+}
+
+var update = flag.Bool("update", false, "rewrite problems.json")
+
+// TestList checks problems.json matches every problem.json.
+// Run `go test ./problems -update` after changing a problem.json.
+func TestList(t *testing.T) {
+	want, err := MakeList(os.DirFS("."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *update {
+		if err := os.WriteFile("problems.json", want, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := os.ReadFile("problems.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatal("problems.json is outdated; run go test ./problems -update")
+	}
+	es, err := ParseList(got)
+	if err != nil || len(es) == 0 || es[0].Title == "" {
+		t.Errorf("ParseList = %+v, %v", es, err)
 	}
 }

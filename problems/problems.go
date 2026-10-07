@@ -2,6 +2,7 @@
 //
 // Each problem is a directory:
 //
+//	problems.json       every problem.json in one list, made by MakeList
 //	<id>/problem.json   {"title": "...", "time_limit_ms": 1000}
 //	<id>/statement.md
 //	<id>/tests/<name>.in, <name>.out   names starting with "sample" are shown
@@ -56,13 +57,72 @@ func ParseMeta(bs []byte) (Meta, error) {
 	if err := json.Unmarshal(bs, &m); err != nil {
 		return Meta{}, err
 	}
+	return m.parse(), nil
+}
+
+func (m meta) parse() Meta {
 	if m.TimeLimitMS <= 0 {
 		m.TimeLimitMS = 1000
 	}
 	return Meta{
 		Title:     m.Title,
 		TimeLimit: time.Duration(m.TimeLimitMS) * time.Millisecond,
-	}, nil
+	}
+}
+
+// Entry is a problem in problems.json.
+type Entry struct {
+	ID string
+	Meta
+}
+
+type entry struct {
+	ID string `json:"id"`
+	meta
+}
+
+// MakeList builds problems.json from every <id>/problem.json in fsys.
+func MakeList(fsys fs.FS) ([]byte, error) {
+	dirs, err := fs.ReadDir(fsys, ".")
+	if err != nil {
+		return nil, err
+	}
+	list := []entry{}
+	for _, d := range dirs {
+		if !d.IsDir() {
+			continue
+		}
+		bs, err := fs.ReadFile(fsys, path.Join(d.Name(), "problem.json"))
+		if err != nil {
+			return nil, err
+		}
+		var m meta
+		if err := json.Unmarshal(bs, &m); err != nil {
+			return nil, fmt.Errorf("%s/problem.json: %w", d.Name(), err)
+		}
+		list = append(list, entry{ID: d.Name(), meta: m})
+	}
+	bs, err := json.MarshalIndent(list, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(bs, '\n'), nil
+}
+
+// ParseList parses problems.json.
+func ParseList(bs []byte) ([]Entry, error) {
+	var list []entry
+	if err := json.Unmarshal(bs, &list); err != nil {
+		return nil, err
+	}
+	out := make([]Entry, len(list))
+	for i, e := range list {
+		if e.ID == "" || strings.Contains(e.ID, "/") {
+			return nil, fmt.Errorf("題目 id 有誤：%q", e.ID)
+		}
+		out[i] = Entry{ID: e.ID, Meta: e.meta.parse()}
+	}
+	return out, nil
 }
 
 // Load reads every problem in fsys, sorted by id.
@@ -88,23 +148,28 @@ func Load(fsys fs.FS) ([]*Problem, error) {
 
 // LoadOne reads the problem in directory id of fsys.
 func LoadOne(fsys fs.FS, id string) (*Problem, error) {
-	p, err := loadOne(fsys, id)
+	bs, err := fs.ReadFile(fsys, path.Join(id, "problem.json"))
+	if err != nil {
+		return nil, fmt.Errorf("problem %s: %w", id, err)
+	}
+	m, err := ParseMeta(bs)
+	if err != nil {
+		return nil, fmt.Errorf("problem %s: %w", id, err)
+	}
+	return LoadWithMeta(fsys, id, m)
+}
+
+// LoadWithMeta reads the problem in directory id of fsys, without its
+// problem.json.
+func LoadWithMeta(fsys fs.FS, id string, m Meta) (*Problem, error) {
+	p, err := loadOne(fsys, id, m)
 	if err != nil {
 		return nil, fmt.Errorf("problem %s: %w", id, err)
 	}
 	return p, nil
 }
 
-func loadOne(fsys fs.FS, id string) (*Problem, error) {
-	bs, err := fs.ReadFile(fsys, path.Join(id, "problem.json"))
-	if err != nil {
-		return nil, err
-	}
-	m, err := ParseMeta(bs)
-	if err != nil {
-		return nil, err
-	}
-
+func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 	st, err := fs.ReadFile(fsys, path.Join(id, "statement.md"))
 	if err != nil {
 		return nil, err

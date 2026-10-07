@@ -64,7 +64,7 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 `https://github.com/mudream4869/offline-judge/tree/main/problems`。
 格式為 `https://github.com/<owner>/<repo>[/tree/<ref>[/<資料夾>]]`，ref 不能含 `/`，只支援公開 repo。
 
-- 載入列表：用 GitHub API 把 ref 解析成 commit，再一次列出整個 tree，並下載每題的 `problem.json`
+- 載入列表：用 GitHub API 把 ref 解析成 commit，再一次列出整個 tree，並下載題目列表 `problems.json`（只有一個檔案）
 - 打開題目時才下載 `statement.md` 與測資，檔案來自 `raw.githubusercontent.com`（固定在該 commit），
   下載後用 blob sha 驗證並存進 IndexedDB
 - 之後啟動先用快取顯示，背景只打 1 次 API 檢查 commit 有沒有變；有變才重新列 tree，沒變過的檔案不重抓
@@ -86,7 +86,7 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 
 ## 新增題目
 
-在 `problems/` 下開一個資料夾：
+在 `problems/` 下開一個資料夾，再更新 `problems/problems.json`：
 
 ```
 problems/0004-xxx/
@@ -95,6 +95,16 @@ problems/0004-xxx/
   tests/
     sample1.in / sample1.out   sample 開頭的會顯示在題目裡
     01.in / 01.out
+```
+
+```sh
+go test ./problems -update   # 從每題的 problem.json 重新產生 problems.json
+```
+
+`problems.json` 沒更新的話 `go test` 會失敗。其他來源也要在資料夾根目錄放 `problems.json`：
+
+```json
+[{"id": "0001-a-plus-b", "title": "A + B", "time_limit_ms": 1000}]
 ```
 
 推到來源的分支後，使用者下次開啟時就會拿到，不用重新 build。
