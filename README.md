@@ -7,7 +7,7 @@
 - 執行 C++（PoC）：[YoWASP clang](https://yowasp.org/) 編成 WASI wasm，再用
   [browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim) 在可砍掉的 worker 裡執行
 - 測資不保密，題目從 GitHub 下載（見下方「題目來源」）
-- 頁面：首頁、題目列表（`#/problems`，在側邊欄選題）、設定（`#/settings`）
+- 頁面：首頁、題目列表（`#/problems`，點表格裡的題目進入，「返回題目列表」回到列表）、設定（`#/settings`）
 - 程式碼、自訂輸入、語言選擇與提交紀錄存在瀏覽器的 IndexedDB（`offline-judge`），重新整理後還在
 
 ## 架構
@@ -54,7 +54,7 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 | `indexes` | key 為來源網址，值為該來源某個 commit 的檔案列表（JSON） |
 | `blobs` | key 為 git blob sha，值為檔案內容；不同來源、不同 commit 的相同檔案共用 |
 
-`drafts` 另外存 `source`（題目來源）與 `problem`（上次選的題目）。
+`drafts` 另外存 `source`（題目來源）。
 
 「紀錄」分頁顯示該題最近 50 筆提交，每筆可展開刪除。IndexedDB 無法使用（例如被瀏覽器封鎖）時照常運作，只是不會保存。
 
