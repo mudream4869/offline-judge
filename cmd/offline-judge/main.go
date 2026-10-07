@@ -72,7 +72,7 @@ var (
 
 const intro = `完全在瀏覽器裡執行的 Python / C++ 解題系統，不需要後端。
 
-- 到左側「題目列表」選一題，寫好程式後「提交」即可評測
+- 到「題目列表」點一題，寫好程式後「提交」即可評測
 - 「自訂輸入」可以用自己的輸入先跑跑看
 - 測資不保密，失敗時會顯示第一筆錯誤的完整輸入與輸出
 - 題目從 GitHub 下載，打開過的題目可離線使用；來源可在「設定」更改`
@@ -85,7 +85,7 @@ func Index(p *tgframe.Params) error {
 	return nil
 }
 
-// Problems lists the problems; the one picked in the sidebar is shown.
+// Problems lists the problems; picking a row opens it.
 func Problems(p *tgframe.Params) error {
 	s := openSet(p.Main, p.Context)
 	if s == nil {
@@ -97,25 +97,16 @@ func Problems(p *tgframe.Params) error {
 		return nil
 	}
 
-	titles := make([]string, len(es))
-	last := memo.getText("problem", "")
-	// The id follows the commit, so a changed list drops the old index.
-	conf := &tgcomp.SelectConf{Base: tgframe.Base{ID: "problem_" + s.Commit()}}
-	for i, e := range es {
-		titles[i] = e.Title
-		if e.ID == last {
-			conf.SetDefault(i)
-		}
+	// Before the list, so the cleared pick takes effect this run.
+	if tgcomp.ButtonClicked(p.Main, backLabel, backConf) {
+		p.State.Delete(pickedKey)
 	}
-	sel := tgcomp.Select(p.Sidebar, "題目", titles, conf)
-	if sel == nil {
-		memo.setText("problem", "")
-		problemList(p.Main, es)
+	e := problemList(p, es)
+	if e == nil {
 		return nil
 	}
-	e := es[*sel]
-	memo.setText("problem", e.ID)
 
+	tgcomp.Button(p.Main, backLabel, backConf)
 	done := func() {}
 	if !e.Cached {
 		done = tgcomp.Spinner(p.Main, "下載題目中…")
@@ -129,18 +120,54 @@ func Problems(p *tgframe.Params) error {
 	return showProblem(p, pr)
 }
 
-func problemList(c *tgframe.Container, es []source.Entry) {
-	tgcomp.Title(c, "題目列表")
-	tgcomp.Caption(c, "從左側選一題")
+const (
+	pickedKey = "picked_problem"
+	backLabel = "← 返回題目列表"
+)
+
+var backConf = &tgcomp.ButtonConf{ID: "problem_back"}
+
+// problemList returns the picked entry, or draws the list if there is none.
+func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
+	// A pick gone from a newer list falls back to the list.
+	if id, ok := p.State.Get[string](pickedKey); ok {
+		for i := range es {
+			if es[i].ID == id {
+				return &es[i]
+			}
+		}
+	}
+
+	ids := make([]string, len(es))
 	rows := make([][]string, len(es))
 	for i, e := range es {
 		off := ""
 		if e.Cached {
 			off = "✓"
 		}
+		ids[i] = e.ID
 		rows[i] = []string{e.Title, fmtTime(e.TimeLimit), off}
 	}
-	tgcomp.Table(c, []string{"題目", "時間限制", "可離線"}, rows)
+	slot := tgcomp.Empty(p.Main)
+	var sel []int
+	slot.With(func(c *tgframe.Container) {
+		tgcomp.Title(c, "題目列表")
+		tgcomp.Caption(c, "點一題開始作答")
+		sel = tgcomp.DataFrame(c, []string{"題目", "時間限制", "可離線"}, rows,
+			(&tgcomp.DataFrameConf{
+				Base:      tgframe.Base{ID: "problem_list"},
+				PageSize:  100,
+				Selection: tgcomp.SelectionModeSingle,
+				RowKeys:   ids,
+			}).SetSortable(false))
+	})
+	if len(sel) == 0 {
+		return nil
+	}
+	// Clearing drops the list's pick too, so it comes back unpicked.
+	slot.Clear()
+	p.State.Set(pickedKey, ids[sel[0]])
+	return &es[sel[0]]
 }
 
 // Settings sets the problem source.
