@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"github.com/voilelab/toolgui/toolgui/tgwasm"
 
 	"github.com/mudream4869/offline-judge/internal/judge"
+	"github.com/mudream4869/offline-judge/internal/source"
 	"github.com/mudream4869/offline-judge/problems"
 )
 
@@ -45,7 +47,6 @@ func (l *lang) runner() runner {
 }
 
 var (
-	probs []*problems.Problem
 	langs = []*lang{
 		{
 			name:    "Python",
@@ -69,30 +70,197 @@ var (
 	}
 )
 
-const intro = `完全在瀏覽器裡執行的 Python / C++ 解題系統，不需要後端，載入後可離線使用。
+const intro = `完全在瀏覽器裡執行的 Python / C++ 解題系統，不需要後端。
 
-- 從下方或左側選一題，寫好程式後「提交」即可評測
+- 到左側「題目列表」選一題，寫好程式後「提交」即可評測
 - 「自訂輸入」可以用自己的輸入先跑跑看
-- 測資不保密，失敗時會顯示第一筆錯誤的完整輸入與輸出`
+- 測資不保密，失敗時會顯示第一筆錯誤的完整輸入與輸出
+- 題目從 GitHub 下載，打開過的題目可離線使用；來源可在「設定」更改`
 
-// Index is the home page: intro and problem list.
+// Index is the home page.
 func Index(p *tgframe.Params) error {
 	tgcomp.Title(p.Main, "Offline Judge")
 	tgcomp.Markdown(p.Main, intro)
-
-	tgcomp.Subtitle(p.Main, "題目")
-	for _, pr := range probs {
-		tgcomp.Link(p.Main, pr.Title, "#/"+pr.ID)
-		tgcomp.Caption(p.Main, fmt.Sprintf("時間限制 %d ms", pr.TimeLimit.Milliseconds()))
-	}
+	tgcomp.Link(p.Main, "前往題目列表", "#/problems")
 	return nil
 }
 
-// problemPage shows one problem with its editor and judge.
-func problemPage(pr *problems.Problem) tgframe.RunFunc {
-	return func(p *tgframe.Params) error {
-		return showProblem(p, pr)
+// Problems lists the problems; the one picked in the sidebar is shown.
+func Problems(p *tgframe.Params) error {
+	s := openSet(p.Main, p.Context)
+	if s == nil {
+		return nil
 	}
+	es := s.Entries()
+	if len(es) == 0 {
+		tgcomp.MessageWarning(p.Main, "這個來源沒有題目")
+		return nil
+	}
+
+	titles := make([]string, len(es))
+	last := memo.getText("problem", "")
+	// The id follows the commit, so a changed list drops the old index.
+	conf := &tgcomp.SelectConf{Base: tgframe.Base{ID: "problem_" + s.Commit()}}
+	for i, e := range es {
+		titles[i] = e.Title
+		if e.ID == last {
+			conf.SetDefault(i)
+		}
+	}
+	sel := tgcomp.Select(p.Sidebar, "題目", titles, conf)
+	if sel == nil {
+		memo.setText("problem", "")
+		problemList(p.Main, es)
+		return nil
+	}
+	e := es[*sel]
+	memo.setText("problem", e.ID)
+
+	done := func() {}
+	if !e.Cached {
+		done = tgcomp.Spinner(p.Main, "下載題目中…")
+	}
+	pr, err := s.Problem(p.Context, e.ID)
+	done()
+	if err != nil {
+		tgcomp.MessageDanger(p.Main, "無法載入題目："+err.Error())
+		return nil
+	}
+	return showProblem(p, pr)
+}
+
+func problemList(c *tgframe.Container, es []source.Entry) {
+	tgcomp.Title(c, "題目列表")
+	tgcomp.Caption(c, "從左側選一題")
+	rows := make([][]string, len(es))
+	for i, e := range es {
+		off := ""
+		if e.Cached {
+			off = "✓"
+		}
+		rows[i] = []string{e.Title, fmtTime(e.TimeLimit), off}
+	}
+	tgcomp.Table(c, []string{"題目", "時間限制", "可離線"}, rows)
+}
+
+// Settings sets the problem source.
+func Settings(p *tgframe.Params) error {
+	tgcomp.Title(p.Main, "設定")
+
+	resetConf := &tgcomp.ButtonConf{ID: "source_reset"}
+	if tgcomp.ButtonClicked(p.Main, "還原預設", resetConf) {
+		memo.setText("source", defaultSource)
+	}
+	cur := sourceURL()
+	url := tgcomp.Textbox(p.Main, "題目來源", &tgcomp.TextboxConf{
+		Default:     cur,
+		ResetKey:    cur,
+		Placeholder: defaultSource,
+	})
+	tgcomp.Caption(p.Main, "GitHub 上的資料夾，例如 "+defaultSource+
+		"；分支名稱不能含 /")
+	if tgcomp.Button(p.Main, "套用", &tgcomp.ButtonConf{ID: "source_apply"}) {
+		if _, err := source.Parse(url); err != nil {
+			tgcomp.MessageDanger(p.Main, err.Error())
+		} else {
+			memo.setText("source", url)
+		}
+	}
+	tgcomp.Button(p.Main, "還原預設", resetConf)
+
+	tgcomp.Subtitle(p.Main, "目前來源")
+	s := openSet(p.Main, p.Context)
+	if s == nil {
+		return nil
+	}
+	if tgcomp.Button(p.Main, "檢查更新", &tgcomp.ButtonConf{ID: "source_refresh"}) {
+		done := tgcomp.Spinner(p.Main, "檢查中…")
+		err := s.Refresh(p.Context)
+		done()
+		if err != nil {
+			tgcomp.MessageDanger(p.Main, "檢查更新失敗："+err.Error())
+		}
+	}
+	if tgcomp.Button(p.Main, "全部下載（離線使用）",
+		&tgcomp.ButtonConf{ID: "source_download"}) {
+		st := tgcomp.Status(p.Main, "下載中…")
+		err := s.DownloadAll(p.Context, func(done, total int) {
+			st.Update(fmt.Sprintf("下載中 %d/%d", done, total))
+		})
+		if err != nil {
+			st.Error("下載失敗")
+			tgcomp.MessageDanger(p.Main, err.Error())
+		} else {
+			st.Complete("下載完成")
+		}
+	}
+
+	es := s.Entries()
+	cached := 0
+	for _, e := range es {
+		if e.Cached {
+			cached++
+		}
+	}
+	tgcomp.Text(p.Main, s.URL)
+	tgcomp.Caption(p.Main, fmt.Sprintf("commit %s，上次檢查 %s，共 %d 題，%d 題可離線",
+		s.Commit()[:7], s.Checked().Format("2006-01-02 15:04"), len(es), cached))
+	return nil
+}
+
+const defaultSource = "https://github.com/mudream4869/offline-judge/tree/main/problems"
+
+var (
+	setMu      sync.Mutex
+	curSet     *source.Set
+	ghClient   = source.NewClient()
+	probsStore source.Store
+)
+
+func sourceURL() string {
+	return memo.getText("source", defaultSource)
+}
+
+// openSet returns the Set of the current source, loading its list on first
+// use. On failure it shows why in c and returns nil.
+func openSet(c *tgframe.Container, ctx context.Context) *source.Set {
+	setMu.Lock()
+	defer setMu.Unlock()
+	url := sourceURL()
+	if curSet == nil || curSet.URL != url {
+		if probsStore == nil {
+			probsStore = newProblemStore()
+		}
+		s, err := source.New(url, ghClient, probsStore)
+		if err != nil {
+			tgcomp.MessageDanger(c, "題目來源有誤："+err.Error())
+			tgcomp.Link(c, "前往設定", "#/settings")
+			return nil
+		}
+		curSet = s
+	}
+	s := curSet
+	if s.Commit() != "" {
+		return s
+	}
+
+	done := tgcomp.Spinner(c, "載入題目列表…")
+	cached, err := s.Open(ctx)
+	done()
+	if err != nil {
+		tgcomp.MessageDanger(c, "無法載入題目列表："+err.Error())
+		tgcomp.Button(c, "重試")
+		return nil
+	}
+	if cached {
+		// Show the stored list now; a newer one shows on a later run.
+		go func() {
+			if err := s.Refresh(context.Background()); err != nil {
+				log.Printf("檢查題目更新失敗：%v", err)
+			}
+		}()
+	}
+	return s
 }
 
 func showProblem(p *tgframe.Params, pr *problems.Problem) error {
@@ -471,20 +639,14 @@ func assetURL(name string) string {
 }
 
 func main() {
-	var err error
-	probs, err = problems.All()
-	if err != nil {
-		log.Fatal(err)
-	}
 	// Python is the default language: start loading it now.
 	langs[0].runner()
 
 	app := tgframe.NewApp()
 	app.SetTitle("Offline Judge")
 	app.AddPageByConfig(&tgframe.PageConfig{Name: "index", Title: "首頁", Emoji: "🏠"}, Index)
-	for _, pr := range probs {
-		app.AddPage(pr.ID, pr.Title, problemPage(pr))
-	}
+	app.AddPageByConfig(&tgframe.PageConfig{Name: "problems", Title: "題目列表", Emoji: "📚"}, Problems)
+	app.AddPageByConfig(&tgframe.PageConfig{Name: "settings", Title: "設定", Emoji: "⚙️"}, Settings)
 	app.SetHashPageNameMode(true)
 	tgwasm.NewExecutor(app).Run()
 }

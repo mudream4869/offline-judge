@@ -1,13 +1,15 @@
 package problems
 
 import (
+	"os"
 	"testing"
 
 	"github.com/mudream4869/offline-judge/internal/judge"
 )
 
+// TestAll checks the problems in this directory.
 func TestAll(t *testing.T) {
-	ps, err := All()
+	ps, err := Load(os.DirFS("."))
 	if err != nil {
 		t.Fatal(err)
 	}

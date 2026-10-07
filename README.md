@@ -6,8 +6,8 @@
 - 執行 Python：[Pyodide](https://pyodide.org/)，跑在獨立的 module worker，超時直接 `terminate()`，並預先暖機一個備用 worker
 - 執行 C++（PoC）：[YoWASP clang](https://yowasp.org/) 編成 WASI wasm，再用
   [browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim) 在可砍掉的 worker 裡執行
-- 測資不保密，題目與測資直接嵌在 wasm 裡
-- 首頁有簡介與題目列表，每題是一個頁面（`#/<題目資料夾名稱>`）
+- 測資不保密，題目從 GitHub 下載（見下方「題目來源」）
+- 頁面：首頁、題目列表（`#/problems`，在側邊欄選題）、設定（`#/settings`）
 - 程式碼、自訂輸入、語言選擇與提交紀錄存在瀏覽器的 IndexedDB（`offline-judge`），重新整理後還在
 
 ## 架構
@@ -51,8 +51,27 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 | --- | --- |
 | `drafts` | key 為 `code_<語言>_<題目>`、`stdin_<語言>_<題目>`、`lang`，值為字串；沒改過的不存，預設值改了會跟著變 |
 | `submissions` | 每次提交一筆：題目、語言、程式碼、時間、結果；只留第一筆失敗的輸出且截斷，以 `problem` 為索引 |
+| `indexes` | key 為來源網址，值為該來源某個 commit 的檔案列表（JSON） |
+| `blobs` | key 為 git blob sha，值為檔案內容；不同來源、不同 commit 的相同檔案共用 |
+
+`drafts` 另外存 `source`（題目來源）與 `problem`（上次選的題目）。
 
 「紀錄」分頁顯示該題最近 50 筆提交，每筆可展開刪除。IndexedDB 無法使用（例如被瀏覽器封鎖）時照常運作，只是不會保存。
+
+## 題目來源
+
+在「設定」填 GitHub 上的資料夾網址，預設為
+`https://github.com/mudream4869/offline-judge/tree/main/problems`。
+格式為 `https://github.com/<owner>/<repo>[/tree/<ref>[/<資料夾>]]`，ref 不能含 `/`，只支援公開 repo。
+
+- 載入列表：用 GitHub API 把 ref 解析成 commit，再一次列出整個 tree，並下載每題的 `problem.json`
+- 打開題目時才下載 `statement.md` 與測資，檔案來自 `raw.githubusercontent.com`（固定在該 commit），
+  下載後用 blob sha 驗證並存進 IndexedDB
+- 之後啟動先用快取顯示，背景只打 1 次 API 檢查 commit 有沒有變；有變才重新列 tree，沒變過的檔案不重抓
+- 未登入的 GitHub API 每小時 60 次，正常使用每次啟動 1 次
+- 打開過的題目可離線使用；「設定」的「全部下載」可一次下載全部題目
+
+抓取邏輯在 `internal/source`（用 Go 的 `net/http`，在瀏覽器裡走 fetch）。
 
 ## C++ 的限制（PoC）
 
@@ -77,6 +96,8 @@ problems/0004-xxx/
     sample1.in / sample1.out   sample 開頭的會顯示在題目裡
     01.in / 01.out
 ```
+
+推到來源的分支後，使用者下次開啟時就會拿到，不用重新 build。
 
 ## 開發
 
