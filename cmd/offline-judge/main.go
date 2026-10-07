@@ -61,7 +61,7 @@ var (
 			id:   "cpp",
 			hl:   "cpp",
 			code: "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n" +
-				"    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n\n}\n",
+				"    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n\n    return 0;\n}\n",
 			loading: "載入中（首次需下載約 27 MB 的 clang）",
 			newRun: func() runner {
 				return NewCppRunner(assetURL("cppcompile.mjs"), assetURL("cpprun.mjs"))
