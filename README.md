@@ -132,3 +132,6 @@ go tool toolgui-wasm serve -o dist -assets .cache/assets ./cmd/offline-judge
 `dist/` 是靜態網站，可直接放到 GitHub Pages（見 `.github/workflows/pages.yml`，
 需在 repo 設定把 Pages 來源設為 GitHub Actions）。
 需要 https 或 localhost（toolgui 的 OPFS 需要 secure context）。
+
+可安裝成 web app（PWA）：manifest 在 `pwa/manifest.json`，圖示在 `pwa/icons/`（build 時複製到 `assets/icons/`），
+`pwa/head.html` 會插進 `index.html` 的 `<head>`。
