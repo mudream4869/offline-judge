@@ -33,6 +33,7 @@ fetch "@bjorn3/browser_wasi_shim@$WASI_SHIM_VERSION" "$WASI"
 rm -rf "$ASSETS"
 mkdir -p "$ASSETS/pyodide" "$ASSETS/wasi"
 cp web/* "$ASSETS/"
+cp -r pwa/icons "$ASSETS/"
 for f in pyodide.mjs pyodide.asm.mjs pyodide.asm.wasm python_stdlib.zip pyodide-lock.json; do
   cp "$PYO/$f" "$ASSETS/pyodide/"
 done
@@ -54,4 +55,5 @@ if [ ! -f "$PCH" ]; then
 fi
 cp "$PCH" "$LAZY/stdc++.h.pch"
 
-go tool toolgui-wasm "$MODE" -o dist -ldflags "-s -w" -assets "$ASSETS" -offline ./cmd/offline-judge
+go tool toolgui-wasm "$MODE" -o dist -ldflags "-s -w" -assets "$ASSETS" -offline \
+  -manifest pwa/manifest.json -icon assets/icons/favicon.ico -head pwa/head.html ./cmd/offline-judge
