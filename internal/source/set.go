@@ -39,7 +39,10 @@ type Entry struct {
 	Cached    bool // statement and tests are stored, so it works offline
 }
 
-// Set is the problems of one source. problem.json comes with the list;
+// listFile lists the problems of a source, so the list is one download.
+const listFile = "problems.json"
+
+// Set is the problems of one source. problems.json comes with the list;
 // statement and tests are downloaded when a problem is opened.
 type Set struct {
 	URL    string
@@ -50,6 +53,7 @@ type Set struct {
 	mu      sync.Mutex
 	ix      *Index
 	entries []Entry
+	metas   map[string]problems.Meta     // by id
 	have    map[string]bool              // blob shas in store
 	probs   map[string]*problems.Problem // for ix.Commit
 }
@@ -106,14 +110,12 @@ func (s *Set) Refresh(ctx context.Context) error {
 			return err
 		}
 		ix = &Index{Commit: commit, Files: files}
-		// The list needs every problem.json; get them before saving ix.
-		var metas []File
-		for _, f := range files {
-			if isMeta(f.Path) {
-				metas = append(metas, f)
-			}
+		// The list needs problems.json; get it before saving ix.
+		list, ok := ix.list()
+		if !ok {
+			return fmt.Errorf("來源缺少 %s", listFile)
 		}
-		if err := s.fetch(ctx, commit, metas, nil); err != nil {
+		if err := s.fetch(ctx, commit, []File{list}, nil); err != nil {
 			return err
 		}
 	}
@@ -134,25 +136,28 @@ func (s *Set) setIndex(ix *Index) error {
 		s.ix = ix
 		return nil
 	}
+	f, ok := ix.list()
+	if !ok {
+		return fmt.Errorf("來源缺少 %s", listFile)
+	}
+	bs, ok := s.store.Blob(f.SHA)
+	if !ok {
+		return fmt.Errorf("快取缺少 %s", listFile)
+	}
+	list, err := problems.ParseList(bs)
+	if err != nil {
+		return fmt.Errorf("%s：%w", listFile, err)
+	}
 	var entries []Entry
-	for _, f := range ix.Files {
-		if !isMeta(f.Path) {
-			continue
-		}
-		id := path.Dir(f.Path)
-		bs, ok := s.store.Blob(f.SHA)
-		if !ok {
-			return fmt.Errorf("快取缺少 %s", f.Path)
-		}
-		m, err := problems.ParseMeta(bs)
-		if err != nil {
-			return fmt.Errorf("%s：%w", f.Path, err)
-		}
-		entries = append(entries, Entry{ID: id, Title: m.Title, TimeLimit: m.TimeLimit})
+	metas := map[string]problems.Meta{}
+	for _, e := range list {
+		entries = append(entries, Entry{ID: e.ID, Title: e.Title, TimeLimit: e.TimeLimit})
+		metas[e.ID] = e.Meta
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })
 	s.ix = ix
 	s.entries = entries
+	s.metas = metas
 	s.probs = map[string]*problems.Problem{}
 	return nil
 }
@@ -200,8 +205,12 @@ func (s *Set) Problem(ctx context.Context, id string) (*problems.Problem, error)
 		s.mu.Unlock()
 		return p, nil
 	}
+	m, ok := s.metas[id]
 	ix, files := s.ix, s.files(id)
 	s.mu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("沒有題目 %s", id)
+	}
 
 	if err := s.fetch(ctx, ix.Commit, files, nil); err != nil {
 		return nil, err
@@ -214,7 +223,7 @@ func (s *Set) Problem(ctx context.Context, id string) (*problems.Problem, error)
 		}
 		fsys[f.Path] = &fstest.MapFile{Data: bs}
 	}
-	p, err := problems.LoadOne(fsys, id)
+	p, err := problems.LoadWithMeta(fsys, id, m)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +260,7 @@ func (s *Set) files(id string) []File {
 		if !ok {
 			continue
 		}
-		if rest == "problem.json" || rest == "statement.md" ||
+		if rest == "statement.md" ||
 			(path.Dir(rest) == "tests" && (path.Ext(rest) == ".in" || path.Ext(rest) == ".out")) {
 			out = append(out, f)
 		}
@@ -354,8 +363,14 @@ func BlobSHA(data []byte) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func isMeta(p string) bool {
-	return path.Base(p) == "problem.json" && path.Dir(p) != "." && !strings.Contains(path.Dir(p), "/")
+// list returns problems.json.
+func (ix *Index) list() (File, bool) {
+	for _, f := range ix.Files {
+		if f.Path == listFile {
+			return f, true
+		}
+	}
+	return File{}, false
 }
 
 // MemStore is a Store in memory.

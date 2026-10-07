@@ -115,9 +115,9 @@ func TestSet(t *testing.T) {
 	if len(es) != 3 || es[0].ID != "0001-a-plus-b" || es[0].Title != "A + B" || es[0].Cached {
 		t.Fatalf("entries = %+v", es)
 	}
-	// Only problem.json so far.
-	if gh.raw != 3 {
-		t.Errorf("raw downloads = %d, want 3", gh.raw)
+	// Only problems.json so far.
+	if gh.raw != 1 {
+		t.Errorf("raw downloads = %d, want 1", gh.raw)
 	}
 
 	p, err := s.Problem(ctx, "0001-a-plus-b")
@@ -156,6 +156,15 @@ func TestSet(t *testing.T) {
 	}
 	if gh.raw != raw || gh.api != api+1 {
 		t.Errorf("refresh: raw %d→%d, api %d→%d", raw, gh.raw, api, gh.api)
+	}
+}
+
+func TestNoList(t *testing.T) {
+	gh, c := newFake(t)
+	delete(gh.files, "problems/problems.json")
+	s, _ := New(srcURL, c, NewMemStore())
+	if _, err := s.Open(context.Background()); err == nil || !strings.Contains(err.Error(), "problems.json") {
+		t.Errorf("err = %v", err)
 	}
 }
 
