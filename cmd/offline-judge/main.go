@@ -107,7 +107,7 @@ const intro = `完全在瀏覽器裡執行的 Python / C++ / JavaScript / Go 解
 - 到「題目列表」點一題，寫好程式後「提交」即可評測
 - 「自訂輸入」可以用自己的輸入先跑跑看
 - 測資不保密，失敗時會顯示第一筆錯誤的完整輸入與輸出
-- 題目從 GitHub 下載，打開過的題目可離線使用；來源可在「設定」更改`
+- 題目從 GitHub 下載，開啟過的題目可離線使用；來源可在「設定」更改`
 
 // Index is the home page.
 func Index(p *tgframe.Params) error {
