@@ -31,6 +31,9 @@ func TestAll(t *testing.T) {
 		if _, err := time.Parse(time.DateTime, p.Version); err != nil {
 			t.Errorf("%s: version should be like 2026-10-08 15:04:05: %q", p.ID, p.Version)
 		}
+		if len(p.Tags) == 0 {
+			t.Errorf("%s: no tags", p.ID)
+		}
 		if len(p.Samples()) == 0 {
 			t.Errorf("%s: no samples", p.ID)
 		}

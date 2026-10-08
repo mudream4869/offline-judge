@@ -3,7 +3,7 @@
 // Each problem is a directory:
 //
 //	problems.json       every problem.json in one list, made by MakeList
-//	<id>/problem.json   {"title": "...", "time_limit_ms": 1000, "version": "2026-10-08 15:04:05"}
+//	<id>/problem.json   {"title": "...", "time_limit_ms": 1000, "version": "2026-10-08 15:04:05", "tags": ["..."]}
 //	<id>/statement.md   a "## 提示" section becomes Hint
 //	<id>/checker.js     optional; judges outputs instead of an exact match
 //	<id>/tests/<name>.in, <name>.out   names starting with "sample" are shown
@@ -30,6 +30,7 @@ type Problem struct {
 	Hint      string // markdown, shown collapsed; empty if none
 	TimeLimit time.Duration
 	Version   string // date of the last change, e.g. "2026-10-08 15:04:05"; may be empty
+	Tags      []string
 	Cases     []judge.Case
 	Checker   string // checker.js source; empty for an exact match
 }
@@ -50,12 +51,14 @@ type Meta struct {
 	Title     string
 	TimeLimit time.Duration
 	Version   string
+	Tags      []string
 }
 
 type meta struct {
-	Title       string `json:"title"`
-	TimeLimitMS int    `json:"time_limit_ms"`
-	Version     string `json:"version,omitempty"`
+	Title       string   `json:"title"`
+	TimeLimitMS int      `json:"time_limit_ms"`
+	Version     string   `json:"version,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
 }
 
 // ParseMeta parses problem.json.
@@ -75,6 +78,7 @@ func (m meta) parse() Meta {
 		Title:     m.Title,
 		TimeLimit: time.Duration(m.TimeLimitMS) * time.Millisecond,
 		Version:   m.Version,
+		Tags:      m.Tags,
 	}
 }
 
@@ -201,6 +205,7 @@ func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 		Hint:      hint,
 		TimeLimit: m.TimeLimit,
 		Version:   m.Version,
+		Tags:      m.Tags,
 		Cases:     cases,
 		Checker:   string(checker),
 	}, nil
