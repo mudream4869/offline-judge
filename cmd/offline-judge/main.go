@@ -129,6 +129,13 @@ func Problems(p *tgframe.Params) error {
 		return nil
 	}
 
+	// A linked problem is picked once, so "back" still reaches the list.
+	if id := p.Query.Get("id"); id != "" {
+		if seen, _ := p.State.Get[string](linkedKey); seen != id {
+			p.State.Set(linkedKey, id)
+			p.State.Set(pickedKey, id)
+		}
+	}
 	// Before the list, so the cleared pick takes effect this run.
 	if tgcomp.ButtonClicked(p.Main, backLabel, backConf) {
 		p.State.Delete(pickedKey)
@@ -154,6 +161,7 @@ func Problems(p *tgframe.Params) error {
 
 const (
 	pickedKey = "picked_problem"
+	linkedKey = "linked_problem"
 	backLabel = "← 返回題目列表"
 )
 
