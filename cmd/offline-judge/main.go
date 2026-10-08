@@ -40,6 +40,11 @@ type lang struct {
 	run     runner
 }
 
+// checkRunner starts the checker worker on first use.
+var checkRunner = sync.OnceValue(func() *CheckRunner {
+	return NewCheckRunner(assetURL("checker.mjs"))
+})
+
 // runner starts the runtime on first use, so unused ones aren't downloaded.
 func (l *lang) runner() runner {
 	l.once.Do(func() { l.run = l.newRun() })
@@ -324,6 +329,9 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 		info += "，版本：" + pr.Version
 	}
 	tgcomp.Caption(p.Main, info)
+	if pr.Checker != "" {
+		tgcomp.Caption(p.Main, "答案不唯一，由題目的 checker 判定；範例輸出只是其中一種")
+	}
 
 	for i, c := range pr.Samples() {
 		tgcomp.Subtitle(p.Main, fmt.Sprintf("範例 %d", i+1))
@@ -370,8 +378,12 @@ func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 	key string, pr *problems.Problem, code string) {
 
 	if tgcomp.Button(c, "提交", &tgcomp.ButtonConf{ID: "submit_" + key}) {
+		var check judge.Checker
+		if pr.Checker != "" {
+			check = checkRunner().Checker(pr.Checker)
+		}
 		st := tgcomp.Status(c, "評測中…")
-		rep, err := judge.Judge(p.Context, run, code, pr.Cases, pr.TimeLimit,
+		rep, err := judge.Judge(p.Context, run, code, pr.Cases, pr.TimeLimit, check,
 			func(done int, cr judge.CaseResult) {
 				st.Update(fmt.Sprintf("評測中 %d/%d", done, len(pr.Cases)))
 				st.Write(fmt.Sprintf("%s：%s（%s）", cr.Name, cr.Verdict, fmtTime(cr.Time)))
@@ -443,7 +455,7 @@ func slim(rep judge.Report) judge.Report {
 			cr.Stdout, cr.Stderr = "", ""
 		} else {
 			shown = true
-			cr.Stdout, cr.Stderr = cut(cr.Stdout), cut(cr.Stderr)
+			cr.Stdout, cr.Stderr, cr.Message = cut(cr.Stdout), cut(cr.Stderr), cut(cr.Message)
 		}
 		cases[i] = cr
 	}
@@ -495,11 +507,19 @@ func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report, i
 			&tgcomp.ExpandConf{ID: "fail_" + id})
 		tgcomp.Text(box, "輸入")
 		tgcomp.Code(box, cut(tc.Input), &tgcomp.CodeConf{Language: "text"})
-		tgcomp.Text(box, "預期輸出")
+		if pr.Checker != "" {
+			tgcomp.Text(box, "參考輸出（答案不唯一）")
+		} else {
+			tgcomp.Text(box, "預期輸出")
+		}
 		tgcomp.Code(box, cut(tc.Output), &tgcomp.CodeConf{Language: "text"})
 		if cr.Verdict != judge.TLE {
 			tgcomp.Text(box, "你的輸出")
 			tgcomp.Code(box, cut(cr.Stdout), &tgcomp.CodeConf{Language: "text"})
+		}
+		if cr.Message != "" {
+			tgcomp.Text(box, "checker 訊息")
+			tgcomp.Code(box, cr.Message, &tgcomp.CodeConf{Language: "text"})
 		}
 		if cr.Stderr != "" {
 			tgcomp.Text(box, "stderr")

@@ -146,6 +146,9 @@ func TestSet(t *testing.T) {
 	if _, err := s2.Problem(ctx, "0003-fibonacci"); err != nil {
 		t.Fatal(err)
 	}
+	if p, err := s2.Problem(ctx, "0005-mode"); err != nil || p.Checker == "" {
+		t.Fatalf("problem with checker = %v, %v", p, err)
+	}
 	if s2.Refresh(ctx) == nil {
 		t.Error("Refresh should fail offline")
 	}

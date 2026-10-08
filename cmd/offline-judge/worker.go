@@ -165,26 +165,11 @@ func (p *pool) run(ctx context.Context, msg js.Value,
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	w := p.cur
-	if err := w.wait(ctx, p.name); err != nil {
-		if w.loadErr != nil {
-			// Let the next attempt start over.
-			p.replace()
-		}
-		return judge.RunResult{}, err
-	}
-
-	kill := time.NewTimer(limit + killSlack)
-	defer kill.Stop()
-
-	p.seq++
-	data, err := w.post(ctx, p.seq, msg, kill.C)
+	data, err := p.call(ctx, msg, limit+killSlack)
 	switch {
 	case err == errTimeout:
-		p.replace()
 		return judge.RunResult{Status: judge.RunTimeout, Time: limit}, nil
 	case err != nil:
-		p.replace()
 		return judge.RunResult{}, err
 	}
 
@@ -198,4 +183,27 @@ func (p *pool) run(ctx context.Context, msg js.Value,
 		p.replace()
 	}
 	return res, nil
+}
+
+// call posts msg (without id) and returns the result, killing the worker
+// after timeout (errTimeout) or on cancel. p.mu must be held.
+func (p *pool) call(ctx context.Context, msg js.Value, timeout time.Duration) (js.Value, error) {
+	w := p.cur
+	if err := w.wait(ctx, p.name); err != nil {
+		if w.loadErr != nil {
+			// Let the next attempt start over.
+			p.replace()
+		}
+		return js.Value{}, err
+	}
+
+	kill := time.NewTimer(timeout)
+	defer kill.Stop()
+
+	p.seq++
+	data, err := w.post(ctx, p.seq, msg, kill.C)
+	if err != nil {
+		p.replace()
+	}
+	return data, err
 }

@@ -55,7 +55,7 @@ func TestJudge(t *testing.T) {
 	}
 
 	calls := 0
-	rep, err := Judge(context.Background(), r, "", cases, time.Second,
+	rep, err := Judge(context.Background(), r, "", cases, time.Second, nil,
 		func(int, CaseResult) { calls++ })
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestJudge(t *testing.T) {
 func TestJudgeAllAC(t *testing.T) {
 	r := fakeRunner{"a": {Status: RunOK, Stdout: "1"}}
 	rep, err := Judge(context.Background(), r, "", []Case{{Input: "a", Output: "1\n"}},
-		time.Second, nil)
+		time.Second, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,11 +90,40 @@ func TestJudgeAllAC(t *testing.T) {
 func TestJudgeCE(t *testing.T) {
 	r := fakeRunner{"a": {Status: RunCompileError, Stderr: "error: x"}}
 	rep, err := Judge(context.Background(), r, "", []Case{{Input: "a"}, {Input: "b"}},
-		time.Second, nil)
+		time.Second, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if rep.Verdict != CE || rep.CompileError != "error: x" || len(rep.Cases) != 0 {
 		t.Errorf("got %+v, want CE with no cases", rep)
+	}
+}
+
+func TestJudgeChecker(t *testing.T) {
+	r := fakeRunner{
+		"a": {Status: RunOK, Stdout: "2 1\n"},
+		"b": {Status: RunOK, Stdout: "3\n"},
+	}
+	// Accepts any order of the expected numbers.
+	check := func(_ context.Context, c Case, out string) (bool, string, error) {
+		if len(out) != len(c.Output) {
+			return false, "length differs", nil
+		}
+		return true, "", nil
+	}
+	cases := []Case{{Name: "a", Input: "a", Output: "1 2\n"}, {Name: "b", Input: "b", Output: "1 2\n"}}
+	rep, err := Judge(context.Background(), r, "", cases, time.Second, check, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Verdict != WA || rep.Cases[0].Verdict != AC || rep.Cases[1].Message != "length differs" {
+		t.Errorf("got %+v", rep)
+	}
+
+	boom := func(context.Context, Case, string) (bool, string, error) {
+		return false, "", errors.New("boom")
+	}
+	if _, err := Judge(context.Background(), r, "", cases, time.Second, boom, nil); err == nil {
+		t.Error("checker error not returned")
 	}
 }

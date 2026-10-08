@@ -19,7 +19,8 @@ page ── toolgui worker (Go wasm：UI / 題目 / 比對)
             ├── pyworker.mjs   (Pyodide：收 code + stdin，回 stdout / stderr / 耗時)
             ├── cppcompile.mjs (clang：收 code，回 WebAssembly.Module 或編譯錯誤；常駐)
             ├── cpprun.mjs     (收 module + stdin，回 stdout / stderr / 耗時)
-            └── jsrun.mjs      (收 code + stdin，回 stdout / stderr / 耗時；每次執行換新的 worker)
+            ├── jsrun.mjs      (收 code + stdin，回 stdout / stderr / 耗時；每次執行換新的 worker)
+            └── checker.mjs    (跑題目的 checker.js，回 AC / WA 與訊息)
 ```
 
 執行用的 worker 介面為：
@@ -39,8 +40,8 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 
 | 結果 | 條件 |
 | --- | --- |
-| AC | 輸出相符（忽略行尾空白與結尾空行） |
-| WA | 輸出不符 |
+| AC | 輸出相符（忽略行尾空白與結尾空行）；有 checker 的題目則由 checker 判定 |
+| WA | 輸出不符，或 checker 不接受 |
 | CE | 編譯錯誤（C++），不執行任何測資 |
 | RE | 例外、非零 `SystemExit` 或非零 exit code（含 `process.exit`） |
 | TLE | 耗時超過限制；超過限制 +1 秒仍未結束就砍掉 worker |
@@ -110,6 +111,7 @@ problems/0004-xxx/
   tests/
     sample1.in / sample1.out   sample 開頭的會顯示在題目裡
     01.in / 01.out
+  checker.js      選填，答案不唯一時用（見下方）
 ```
 
 ```sh
@@ -126,6 +128,24 @@ go test ./problems -update   # 從每題的 problem.json 重新產生 problems.j
 ```
 
 推到來源的分支後，使用者下次開啟時就會拿到，不用重新 build。
+
+### checker
+
+答案不唯一的題目放 `checker.js`，取代逐字比對（範例：`problems/0005-mode`）：
+
+```js
+// input：測資輸入，output：選手輸出，answer：.out 的參考答案
+export default function check(input, output, answer) {
+  return true            // AC
+  // return false / '訊息'  WA，訊息會顯示在失敗的測資下
+}
+```
+
+- 選手 TLE / RE 時不會呼叫 checker
+- 在獨立的 worker 執行，每次 5 秒上限；丟例外、逾時或回傳其他型別都算評測失敗
+- 執行前先拿掉 IndexedDB、fetch、Worker 等 API，盡量讓第三方來源的 checker 碰不到使用者的資料；
+  module 的 `import` 仍可連網，所以只能算盡力而為
+- `go test ./problems` 會用 Node 確認每題的 `.out` 都能通過自己的 checker
 
 ## 開發
 
