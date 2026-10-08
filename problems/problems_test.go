@@ -15,7 +15,7 @@ import (
 )
 
 // langIDs are the language ids of cmd/offline-judge.
-var langIDs = map[string]bool{"py": true, "cpp": true, "js": true}
+var langIDs = map[string]bool{"py": true, "cpp": true, "js": true, "go": true}
 
 // TestAll checks the problems in this directory.
 func TestAll(t *testing.T) {

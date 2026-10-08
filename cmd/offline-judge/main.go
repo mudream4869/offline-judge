@@ -1,6 +1,6 @@
 //go:build js && wasm
 
-// Command offline-judge is a Python / C++ / JavaScript judge that runs entirely in the browser.
+// Command offline-judge is a Python / C++ / JavaScript / Go judge that runs entirely in the browser.
 package main
 
 import (
@@ -71,7 +71,7 @@ var (
 				"    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n\n    return 0;\n}\n",
 			loading: "載入中（首次需下載約 27 MB 的 clang）",
 			newRun: func() runner {
-				return NewCppRunner(assetURL("cppcompile.mjs"), assetURL("cpprun.mjs"))
+				return NewCompileRunner("C++", assetURL("cppcompile.mjs"), assetURL("wasirun.mjs"))
 			},
 		},
 		{
@@ -82,10 +82,22 @@ var (
 			loading: "載入中",
 			newRun:  func() runner { return NewCodeRunner(assetURL("jsrun.mjs"), "JavaScript") },
 		},
+		{
+			name: "Go",
+			id:   "go",
+			hl:   "go",
+			code: "package main\n\nimport (\n\t\"bufio\"\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc main() {\n" +
+				"\tin := bufio.NewReader(os.Stdin)\n\tout := bufio.NewWriter(os.Stdout)\n" +
+				"\tdefer out.Flush()\n\n\tvar n int\n\tfmt.Fscan(in, &n)\n}\n",
+			loading: "載入中（首次需下載約 17 MB 的 Go 編譯器）",
+			newRun: func() runner {
+				return NewCompileRunner("Go", assetURL("gocompile.mjs"), assetURL("wasirun.mjs"))
+			},
+		},
 	}
 )
 
-const intro = `完全在瀏覽器裡執行的 Python / C++ / JavaScript 解題系統，不需要後端。
+const intro = `完全在瀏覽器裡執行的 Python / C++ / JavaScript / Go 解題系統，不需要後端。
 
 - 到「題目列表」點一題，寫好程式後「提交」即可評測
 - 「自訂輸入」可以用自己的輸入先跑跑看
