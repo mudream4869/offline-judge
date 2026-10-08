@@ -4,7 +4,7 @@
 //
 //	problems.json       every problem.json in one list, made by MakeList
 //	<id>/problem.json   {"title": "...", "time_limit_ms": 1000}
-//	<id>/statement.md
+//	<id>/statement.md   a "## 提示" section becomes Hint
 //	<id>/tests/<name>.in, <name>.out   names starting with "sample" are shown
 package problems
 
@@ -25,6 +25,7 @@ type Problem struct {
 	ID        string
 	Title     string
 	Statement string
+	Hint      string // markdown, shown collapsed; empty if none
 	TimeLimit time.Duration
 	Cases     []judge.Case
 }
@@ -180,13 +181,42 @@ func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 		return nil, err
 	}
 
+	stmt, hint := splitHint(string(st))
 	return &Problem{
 		ID:        id,
 		Title:     m.Title,
-		Statement: string(st),
+		Statement: stmt,
+		Hint:      hint,
 		TimeLimit: m.TimeLimit,
 		Cases:     cases,
 	}, nil
+}
+
+const hintHeading = "## 提示"
+
+// splitHint moves the hint section, up to the next "## " heading, out of st.
+func splitHint(st string) (stmt, hint string) {
+	lines := strings.SplitAfter(st, "\n")
+	start := -1
+	for i, l := range lines {
+		if strings.TrimSpace(l) == hintHeading {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return st, ""
+	}
+	end := len(lines)
+	for i := start + 1; i < len(lines); i++ {
+		if strings.HasPrefix(lines[i], "## ") {
+			end = i
+			break
+		}
+	}
+	hint = strings.TrimSpace(strings.Join(lines[start+1:end], ""))
+	stmt = strings.Join(lines[:start], "") + strings.Join(lines[end:], "")
+	return strings.TrimRight(stmt, "\n") + "\n", hint
 }
 
 func loadCases(fsys fs.FS, dir string) ([]judge.Case, error) {

@@ -67,3 +67,13 @@ func TestList(t *testing.T) {
 		t.Errorf("ParseList = %+v, %v", es, err)
 	}
 }
+
+func TestSplitHint(t *testing.T) {
+	stmt, hint := splitHint("# T\n\nbody\n\n## 提示\n\nuse dict\n\n## 備註\n\nnote\n")
+	if stmt != "# T\n\nbody\n\n## 備註\n\nnote\n" || hint != "use dict" {
+		t.Errorf("got %q, %q", stmt, hint)
+	}
+	if stmt, hint := splitHint("# T\n"); stmt != "# T\n" || hint != "" {
+		t.Errorf("no hint: got %q, %q", stmt, hint)
+	}
+}

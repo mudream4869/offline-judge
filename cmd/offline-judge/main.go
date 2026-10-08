@@ -330,6 +330,11 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 		tgcomp.Code(out, c.Output, &tgcomp.CodeConf{Language: "text"})
 	}
 
+	if pr.Hint != "" {
+		h := tgcomp.Expand(p.Main, "提示", false, &tgcomp.ExpandConf{ID: "hint_" + pr.ID})
+		tgcomp.Markdown(h, pr.Hint)
+	}
+
 	tgcomp.Divider(p.Main)
 
 	// One editor per problem and language, so switching keeps the code.
