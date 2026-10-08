@@ -24,15 +24,20 @@ page ── toolgui worker (Go wasm：UI / 題目 / 比對)
             ├── wasirun.mjs    (C++、Go 共用：收 module + stdin，回 stdout / stderr / 耗時)
             ├── jsrun.mjs      (收 code + stdin，回 stdout / stderr / 耗時；每次執行換新的 worker)
             └── checker.mjs    (跑題目的 checker.js，回 AC / WA 與訊息)
+
+sandbox.mjs：跑題目附的 JS（checker.js、interactor.js）用，先拿掉儲存與網路 API
 ```
 
 執行用的 worker 介面為：
 
 ```
-in:  {id, code, stdin}          （wasirun.mjs 是 {id, module, stdin}）
+in:  {id, code, stdin, interactor?}   （wasirun.mjs 是 {id, module, stdin, interactor?}）
 out: {type: "ready"} | {type: "error", error}
-     {type: "result", id, status: "ok"|"re", stdout, stderr, ms, fatal}
+     {type: "result", id, status: "ok"|"re", stdout, stderr, ms, fatal, judged?, iaError?}
 ```
+
+有 `interactor`（互動題）時 `stdin` 是互動程式的輸入，`stdout` 是互動過程，
+`judged` 是互動程式的判定 `{ok, message}`。pyworker 與 wasirun 支援，jsrun 尚未支援。
 
 C++ 與 Go 的編譯與執行分開：載入編譯器很慢，所以編譯 worker 常駐；執行 worker 很便宜，
 TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
@@ -43,8 +48,8 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 
 | 結果 | 條件 |
 | --- | --- |
-| AC | 輸出相符（忽略行尾空白與結尾空行）；有 checker 的題目則由 checker 判定 |
-| WA | 輸出不符，或 checker 不接受 |
+| AC | 輸出相符（忽略行尾空白與結尾空行）；有 checker 的題目則由 checker 判定，互動題由互動程式判定 |
+| WA | 輸出不符，或 checker / 互動程式不接受（互動題先於 RE：被互動程式切斷的程式常常接著出錯） |
 | CE | 編譯錯誤（C++、Go），不執行任何測資 |
 | RE | 例外、非零 `SystemExit` 或非零 exit code（含 `process.exit`） |
 | TLE | 耗時超過限制；超過限制 +1 秒仍未結束就砍掉 worker |
@@ -126,6 +131,8 @@ problems/0004-xxx/
     sample1.in / sample1.out   sample 開頭的會顯示在題目裡
     01.in / 01.out
   checker.js      選填，答案不唯一時用（見下方）
+  interactor.js   選填，互動題用（見下方）；與 checker.js 擇一
+  solution.py     互動題必填的參考解，只給 go test 用
 ```
 
 ```sh
@@ -166,6 +173,33 @@ export default function check(input, output, answer) {
 - 執行前先拿掉 IndexedDB、fetch、Worker 等 API，盡量讓第三方來源的 checker 碰不到使用者的資料；
   module 的 `import` 仍可連網，所以只能算盡力而為
 - `go test ./problems` 會用 Node 確認每題的 `.out` 都能通過自己的 checker
+
+### 互動題
+
+放 `interactor.js` 就是互動題（範例：`problems/0009-guess-number`）。程式不讀固定的輸入，
+而是跟互動程式一問一答；`.in` 是互動程式的輸入，`.out` 只有 sample 需要，放範例互動過程顯示在題目裡。
+
+```js
+// input：測資的 .in
+export default function interact(input) {
+  return {
+    // 程式要讀但沒有資料時呼叫；out 是程式上次以來的輸出。回傳要給程式讀的字串，null 為 EOF
+    read(out) { return '...\n' },
+    // 程式結束時呼叫；out 是剩下的輸出。回傳 true 為 AC，false / '訊息' 為 WA
+    finish(out) { return true },
+  }
+}
+```
+
+- 互動程式跟選手程式在同一個 worker 裡同步呼叫（不需要 `SharedArrayBuffer`），
+  所以 TLE 時一起被砍；花在互動程式的時間不算進選手的耗時
+- `read` 只在程式要讀時才呼叫，程式一次輸出多行時會一起給；回傳 null 後程式讀到 EOF，不會兩邊互等
+- 互動過程以 `→`（程式輸出）、`←`（互動程式回答）記錄，失敗時顯示在測資下
+- Python 與 C++ 的輸出不 flush 也送得到（C++ 的 stdout 是 line buffered）；Go 直接寫 `os.Stdout` 也是，
+  但用 `bufio.Writer`（範本預設）時要在讀之前 `Flush()`。JavaScript 尚未支援
+- 跟 checker 一樣先拿掉儲存與網路 API；丟例外算評測失敗
+- `go test ./problems` 會用 Node 讓 `solution.py` 跟互動程式對答，所有測資都要通過；
+  這裡互動程式在程式輸出完整的一行後就被呼叫，參考解要 `flush=True`
 
 ## 開發
 

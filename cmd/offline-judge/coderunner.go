@@ -18,11 +18,19 @@ func NewCodeRunner(url, name string) *CodeRunner {
 	return &CodeRunner{newPool(url, name)}
 }
 
-func (r *CodeRunner) Run(ctx context.Context, code, stdin string,
+func (r *CodeRunner) Run(ctx context.Context, code string, in judge.Input,
 	limit time.Duration) (judge.RunResult, error) {
 
 	msg := js.Global().Get("Object").New()
 	msg.Set("code", code)
-	msg.Set("stdin", stdin)
+	setInput(msg, in)
 	return r.run(ctx, msg, limit)
+}
+
+// setInput sets the stdin (and interactor) of a worker message.
+func setInput(msg js.Value, in judge.Input) {
+	msg.Set("stdin", in.Stdin)
+	if in.Interactor != "" {
+		msg.Set("interactor", in.Interactor)
+	}
 }

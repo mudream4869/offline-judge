@@ -46,7 +46,7 @@ type Entry struct {
 const listFile = "problems.json"
 
 // Set is the problems of one source. problems.json comes with the list;
-// statement, checker and tests are downloaded when a problem is opened.
+// statement, checker, interactor and tests are downloaded when a problem is opened.
 type Set struct {
 	URL    string
 	repo   Repo
@@ -264,7 +264,7 @@ func (s *Set) files(id string) []File {
 		if !ok {
 			continue
 		}
-		if rest == "statement.md" || rest == problems.CheckerFile ||
+		if rest == "statement.md" || rest == problems.CheckerFile || rest == problems.InteractorFile ||
 			(path.Dir(rest) == "tests" && (path.Ext(rest) == ".in" || path.Ext(rest) == ".out")) {
 			out = append(out, f)
 		}
