@@ -26,6 +26,12 @@ jobs:
         with:
           node-version: 22
       - run: go test ./...
+      # build.sh 存版本號；換版本就整個重抓，只改 header/flags 時沿用已下載的套件
+      - uses: actions/cache@v4
+        with:
+          path: .cache
+          key: build-${{ hashFiles('scripts/build.sh') }}-${{ hashFiles('web/stdc++.h', 'web/cppflags.mjs') }}
+          restore-keys: build-${{ hashFiles('scripts/build.sh') }}-
       - run: scripts/build.sh
       - uses: actions/upload-pages-artifact@v3
         with:
