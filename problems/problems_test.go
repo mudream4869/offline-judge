@@ -24,8 +24,8 @@ func TestAll(t *testing.T) {
 		if p.Title == "" || p.Statement == "" {
 			t.Errorf("%s: missing title or statement", p.ID)
 		}
-		if _, err := time.Parse(time.DateOnly, p.Version); err != nil {
-			t.Errorf("%s: version should be a date like 2026-10-08: %q", p.ID, p.Version)
+		if _, err := time.Parse(time.DateTime, p.Version); err != nil {
+			t.Errorf("%s: version should be like 2026-10-08 15:04:05: %q", p.ID, p.Version)
 		}
 		if len(p.Samples()) == 0 {
 			t.Errorf("%s: no samples", p.ID)

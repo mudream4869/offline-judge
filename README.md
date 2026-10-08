@@ -105,7 +105,7 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 
 ```
 problems/0004-xxx/
-  problem.json    {"title": "...", "time_limit_ms": 1000, "version": "2026-10-08"}
+  problem.json    {"title": "...", "time_limit_ms": 1000, "version": "2026-10-08 15:04:05"}
   statement.md    題目敘述（Markdown，不支援 LaTeX）；「## 提示」段落會收合顯示
   tests/
     sample1.in / sample1.out   sample 開頭的會顯示在題目裡
@@ -116,13 +116,13 @@ problems/0004-xxx/
 go test ./problems -update   # 從每題的 problem.json 重新產生 problems.json
 ```
 
-`version` 是題目最後修改的日期（`YYYY-MM-DD`），改了敘述、測資或時間限制就要更新；
+`version` 是題目最後修改的時間（`YYYY-MM-DD hh:mm:ss`），改了敘述、測資或時間限制就要更新；
 提交紀錄會記下評測時的版本，版本不同時標示「舊版」。
 
-`problems.json` 沒更新、或 `version` 不是日期的話 `go test` 會失敗。其他來源也要在資料夾根目錄放 `problems.json`：
+`problems.json` 沒更新、或 `version` 格式不對的話 `go test` 會失敗。其他來源也要在資料夾根目錄放 `problems.json`：
 
 ```json
-[{"id": "0001-a-plus-b", "title": "A + B", "time_limit_ms": 1000, "version": "2026-10-06"}]
+[{"id": "0001-a-plus-b", "title": "A + B", "time_limit_ms": 1000, "version": "2026-10-06 21:30:00"}]
 ```
 
 推到來源的分支後，使用者下次開啟時就會拿到，不用重新 build。

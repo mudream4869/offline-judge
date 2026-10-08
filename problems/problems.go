@@ -3,7 +3,7 @@
 // Each problem is a directory:
 //
 //	problems.json       every problem.json in one list, made by MakeList
-//	<id>/problem.json   {"title": "...", "time_limit_ms": 1000, "version": "2026-10-08"}
+//	<id>/problem.json   {"title": "...", "time_limit_ms": 1000, "version": "2026-10-08 15:04:05"}
 //	<id>/statement.md   a "## 提示" section becomes Hint
 //	<id>/tests/<name>.in, <name>.out   names starting with "sample" are shown
 package problems
@@ -27,7 +27,7 @@ type Problem struct {
 	Statement string
 	Hint      string // markdown, shown collapsed; empty if none
 	TimeLimit time.Duration
-	Version   string // date of the last change, e.g. "2026-10-08"; may be empty
+	Version   string // date of the last change, e.g. "2026-10-08 15:04:05"; may be empty
 	Cases     []judge.Case
 }
 
