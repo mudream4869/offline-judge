@@ -30,8 +30,8 @@ func TestEqual(t *testing.T) {
 // fakeRunner answers each input from a table.
 type fakeRunner map[string]RunResult
 
-func (f fakeRunner) Run(_ context.Context, _, stdin string, _ time.Duration) (RunResult, error) {
-	res, ok := f[stdin]
+func (f fakeRunner) Run(_ context.Context, _ string, in Input, _ time.Duration) (RunResult, error) {
+	res, ok := f[in.Stdin]
 	if !ok {
 		return RunResult{}, errors.New("no such input")
 	}
@@ -55,7 +55,7 @@ func TestJudge(t *testing.T) {
 	}
 
 	calls := 0
-	rep, err := Judge(context.Background(), r, "", cases, time.Second, nil,
+	rep, err := Judge(context.Background(), r, "", cases, Spec{Limit: time.Second},
 		func(int, CaseResult) { calls++ })
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestJudge(t *testing.T) {
 func TestJudgeAllAC(t *testing.T) {
 	r := fakeRunner{"a": {Status: RunOK, Stdout: "1"}}
 	rep, err := Judge(context.Background(), r, "", []Case{{Input: "a", Output: "1\n"}},
-		time.Second, nil, nil)
+		Spec{Limit: time.Second}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestJudgeAllAC(t *testing.T) {
 func TestJudgeCE(t *testing.T) {
 	r := fakeRunner{"a": {Status: RunCompileError, Stderr: "error: x"}}
 	rep, err := Judge(context.Background(), r, "", []Case{{Input: "a"}, {Input: "b"}},
-		time.Second, nil, nil)
+		Spec{Limit: time.Second}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestJudgeChecker(t *testing.T) {
 		return true, "", nil
 	}
 	cases := []Case{{Name: "a", Input: "a", Output: "1 2\n"}, {Name: "b", Input: "b", Output: "1 2\n"}}
-	rep, err := Judge(context.Background(), r, "", cases, time.Second, check, nil)
+	rep, err := Judge(context.Background(), r, "", cases, Spec{Limit: time.Second, Check: check}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,38 @@ func TestJudgeChecker(t *testing.T) {
 	boom := func(context.Context, Case, string) (bool, string, error) {
 		return false, "", errors.New("boom")
 	}
-	if _, err := Judge(context.Background(), r, "", cases, time.Second, boom, nil); err == nil {
+	if _, err := Judge(context.Background(), r, "", cases, Spec{Limit: time.Second, Check: boom}, nil); err == nil {
 		t.Error("checker error not returned")
+	}
+}
+
+func TestJudgeInteractive(t *testing.T) {
+	r := fakeRunner{
+		"ac":    {Status: RunOK, Judged: &Judgement{OK: true}},
+		"wa":    {Status: RunOK, Judged: &Judgement{Message: "wrong guess"}},
+		"cut":   {Status: RunError, Judged: &Judgement{Message: "too many queries"}},
+		"crash": {Status: RunError, Judged: &Judgement{OK: true}},
+		"slow":  {Status: RunTimeout},
+	}
+	cases := []Case{{Input: "ac"}, {Input: "wa"}, {Input: "cut"}, {Input: "crash"}, {Input: "slow"}}
+	rep, err := Judge(context.Background(), r, "", cases,
+		Spec{Limit: time.Second, Interactor: "x"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Verdict{AC, WA, WA, RE, TLE}
+	for i, cr := range rep.Cases {
+		if cr.Verdict != want[i] {
+			t.Errorf("case %s: got %s, want %s", cases[i].Input, cr.Verdict, want[i])
+		}
+	}
+	if rep.Cases[2].Message != "too many queries" {
+		t.Errorf("message = %q", rep.Cases[2].Message)
+	}
+
+	r["none"] = RunResult{Status: RunOK}
+	if _, err := Judge(context.Background(), r, "", []Case{{Input: "none"}},
+		Spec{Limit: time.Second, Interactor: "x"}, nil); err == nil {
+		t.Error("missing verdict not reported")
 	}
 }

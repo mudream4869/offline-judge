@@ -4,6 +4,7 @@ package judge
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 )
@@ -35,15 +36,31 @@ const (
 // RunResult is what a Runner reports for one execution.
 type RunResult struct {
 	Status RunStatus
-	Stdout string
+	Stdout string // with an interactor, the transcript
 	Stderr string
 	Time   time.Duration
+	// Judged is the interactor's verdict, once the program ended in time.
+	Judged *Judgement
 }
 
-// Runner executes code with stdin under a time limit.
+// Judgement is an interactor's verdict.
+type Judgement struct {
+	OK      bool
+	Message string
+}
+
+// Input is what a program reads.
+type Input struct {
+	Stdin string
+	// Interactor is interactor.js. When set, the program reads what it
+	// answers instead, and Stdin is the interactor's input.
+	Interactor string
+}
+
+// Runner executes code under a time limit.
 // It must stop the program once limit is clearly exceeded.
 type Runner interface {
-	Run(ctx context.Context, code, stdin string, limit time.Duration) (RunResult, error)
+	Run(ctx context.Context, code string, in Input, limit time.Duration) (RunResult, error)
 }
 
 // Checker decides whether output answers c. msg explains a rejection.
@@ -64,7 +81,7 @@ type CaseResult struct {
 	Time    time.Duration
 	Stdout  string
 	Stderr  string
-	Message string `json:",omitempty"` // from the checker
+	Message string `json:",omitempty"` // from the checker or interactor
 }
 
 // Report is the result of judging a submission.
@@ -75,13 +92,22 @@ type Report struct {
 	CompileError string
 }
 
+// Spec is how a problem is judged.
+type Spec struct {
+	Limit time.Duration
+	Check Checker // compares outputs; nil means Equal
+	// Interactor is interactor.js for an interactive problem: it talks to
+	// the program, with each case's Input as its input, and gives the verdict.
+	Interactor string
+}
+
 // Judge runs code on each case, stopping after the first TLE or a CE.
 // The overall verdict is the first non-AC one.
-// check compares outputs; nil means Equal.
 // progress, if not nil, is called after each case.
 func Judge(ctx context.Context, r Runner, code string, cases []Case,
-	limit time.Duration, check Checker, progress func(done int, cr CaseResult)) (Report, error) {
+	spec Spec, progress func(done int, cr CaseResult)) (Report, error) {
 
+	limit, check := spec.Limit, spec.Check
 	if check == nil {
 		check = func(_ context.Context, c Case, out string) (bool, string, error) {
 			return Equal(out, c.Output), "", nil
@@ -90,7 +116,7 @@ func Judge(ctx context.Context, r Runner, code string, cases []Case,
 
 	rep := Report{Verdict: AC}
 	for i, c := range cases {
-		res, err := r.Run(ctx, code, c.Input, limit)
+		res, err := r.Run(ctx, code, Input{Stdin: c.Input, Interactor: spec.Interactor}, limit)
 		if err != nil {
 			return rep, err
 		}
@@ -107,8 +133,16 @@ func Judge(ctx context.Context, r Runner, code string, cases []Case,
 		switch {
 		case res.Status == RunTimeout || res.Time > limit:
 			cr.Verdict = TLE
+		case res.Judged != nil && !res.Judged.OK:
+			// Before RE: a program cut off by the interactor often crashes.
+			cr.Verdict, cr.Message = WA, res.Judged.Message
 		case res.Status == RunError:
 			cr.Verdict = RE
+		case spec.Interactor != "":
+			if res.Judged == nil {
+				return rep, errors.New("互動程式沒有回報結果")
+			}
+			cr.Verdict = AC
 		default:
 			ok, msg, err := check(ctx, c, res.Stdout)
 			if err != nil {

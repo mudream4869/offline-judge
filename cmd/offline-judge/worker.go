@@ -158,7 +158,7 @@ func (p *pool) replace() {
 }
 
 // run posts msg (without id) and waits for a result shaped like
-// {status, stdout, stderr, ms, fatal}.
+// {status, stdout, stderr, ms, fatal, judged?, iaError?}.
 func (p *pool) run(ctx context.Context, msg js.Value,
 	limit time.Duration) (judge.RunResult, error) {
 
@@ -181,6 +181,12 @@ func (p *pool) run(ctx context.Context, msg js.Value,
 	}
 	if data.Get("fatal").Bool() {
 		p.replace()
+	}
+	if e := data.Get("iaError"); e.Truthy() {
+		return judge.RunResult{}, errors.New("互動程式錯誤：" + e.String())
+	}
+	if j := data.Get("judged"); j.Truthy() {
+		res.Judged = &judge.Judgement{OK: j.Get("ok").Bool(), Message: j.Get("message").String()}
 	}
 	return res, nil
 }

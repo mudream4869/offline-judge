@@ -49,7 +49,8 @@ func TestAll(t *testing.T) {
 			t.Errorf("%s: samples should come first", p.ID)
 		}
 		for _, c := range p.Cases {
-			if c.Output == "" {
+			// An interactive problem's .out is only a sample transcript.
+			if c.Output == "" && (p.Interactor == "" || strings.HasPrefix(c.Name, "sample")) {
 				t.Errorf("%s/%s: empty output", p.ID, c.Name)
 			}
 			// Sanity: an output always matches itself.
@@ -100,6 +101,79 @@ func TestCheckers(t *testing.T) {
 		if err != nil || len(out) > 0 {
 			t.Errorf("%s: checker rejects expected outputs: %v\n%s", p.ID, err,
 				strings.TrimSpace(string(out)))
+		}
+	}
+}
+
+// interactHarness runs argv[3] (a Python solution) against interactor
+// argv[2] on each case (JSON on stdin) and prints the ones it doesn't pass.
+// The interactor reads whenever the solution has written whole lines, so
+// the solution must flush after each line.
+const interactHarness = `
+import { readFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
+const make = (await import(pathToFileURL(process.argv[2]))).default
+for (const c of JSON.parse(readFileSync(0, 'utf8'))) {
+  const ia = make(c.Input)
+  const p = spawn('python3', [process.argv[3]])
+  const send = (r) => (r == null || r === '' ? p.stdin.end() : p.stdin.write(r))
+  p.stdin.on('error', () => {})
+  send(ia.read(''))
+  // A pipe can split a line; pass whole lines, as the program would
+  // have written them by the time it reads.
+  let pending = ''
+  p.stdout.on('data', (d) => {
+    pending += d
+    if (pending.endsWith('\n') && !p.stdin.writableEnded) {
+      send(ia.read(pending))
+      pending = ''
+    }
+  })
+  let err = ''
+  p.stderr.on('data', (d) => { err += d })
+  const code = await new Promise((ok) => p.on('close', ok))
+  const r = ia.finish(pending)
+  if (r !== true || code !== 0) console.log(c.Name + ': ' + r + ' (exit ' + code + ') ' + err)
+}
+`
+
+// TestInteractors runs each interactive problem's solution.py against its
+// interactor.
+func TestInteractors(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not found")
+	}
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not found")
+	}
+	ps, err := Load(os.DirFS("."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := filepath.Join(t.TempDir(), "harness.mjs")
+	if err := os.WriteFile(harness, []byte(interactHarness), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range ps {
+		if p.Interactor == "" {
+			continue
+		}
+		sol := filepath.Join(p.ID, "solution.py")
+		if _, err := os.Stat(sol); err != nil {
+			t.Errorf("%s: interactive problem without solution.py", p.ID)
+			continue
+		}
+		in, err := json.Marshal(p.Cases)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(node, harness, filepath.Join(p.ID, InteractorFile), sol)
+		cmd.Stdin = bytes.NewReader(in)
+		out, err := cmd.CombinedOutput()
+		if err != nil || len(out) > 0 {
+			t.Errorf("%s: solution fails: %v\n%s", p.ID, err, strings.TrimSpace(string(out)))
 		}
 	}
 }

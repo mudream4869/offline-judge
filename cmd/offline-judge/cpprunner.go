@@ -86,7 +86,7 @@ func (r *CppRunner) compile(ctx context.Context, code string) error {
 	return nil
 }
 
-func (r *CppRunner) Run(ctx context.Context, code, stdin string,
+func (r *CppRunner) Run(ctx context.Context, code string, in judge.Input,
 	limit time.Duration) (judge.RunResult, error) {
 
 	if err := r.compile(ctx, code); err != nil {
@@ -102,6 +102,6 @@ func (r *CppRunner) Run(ctx context.Context, code, stdin string,
 
 	msg := js.Global().Get("Object").New()
 	msg.Set("module", module)
-	msg.Set("stdin", stdin)
+	setInput(msg, in)
 	return r.exec.run(ctx, msg, limit)
 }

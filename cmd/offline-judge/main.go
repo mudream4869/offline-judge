@@ -37,9 +37,11 @@ type lang struct {
 	hl      string // code highlight language
 	code    string // default code
 	loading string // shown while the runtime loads
-	newRun  func() runner
-	once    sync.Once
-	run     runner
+	// interactive: the runner can talk to an interactor (interactor.js).
+	interactive bool
+	newRun      func() runner
+	once        sync.Once
+	run         runner
 }
 
 // checkRunner starts the checker worker on first use.
@@ -56,12 +58,13 @@ func (l *lang) runner() runner {
 var (
 	langs = []*lang{
 		{
-			name:    "Python",
-			id:      "py",
-			hl:      "python",
-			code:    "import sys\ninput = sys.stdin.readline\n\n",
-			loading: "載入中（首次約需數秒）",
-			newRun:  func() runner { return NewCodeRunner(assetURL("pyworker.mjs"), "Python") },
+			name:        "Python",
+			id:          "py",
+			hl:          "python",
+			code:        "import sys\ninput = sys.stdin.readline\n\n",
+			loading:     "載入中（首次約需數秒）",
+			interactive: true,
+			newRun:      func() runner { return NewCodeRunner(assetURL("pyworker.mjs"), "Python") },
 		},
 		{
 			name: "C++",
@@ -69,7 +72,8 @@ var (
 			hl:   "cpp",
 			code: "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n" +
 				"    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n\n    return 0;\n}\n",
-			loading: "載入中（首次需下載約 27 MB 的 clang）",
+			loading:     "載入中（首次需下載約 27 MB 的 clang）",
+			interactive: true,
 			newRun: func() runner {
 				return NewCppRunner(assetURL("cppcompile.mjs"), assetURL("cpprun.mjs"))
 			},
@@ -375,13 +379,20 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	if pr.Checker != "" {
 		tgcomp.Caption(p.Main, "答案不唯一，由題目的 checker 判定；範例輸出只是其中一種")
 	}
+	if pr.Interactor != "" {
+		tgcomp.Caption(p.Main, "互動題：程式與題目的互動程式一問一答")
+	}
 
+	inLabel, outLabel := "輸入", "輸出"
+	if pr.Interactor != "" {
+		inLabel, outLabel = "互動程式的輸入", "互動過程"
+	}
 	for i, c := range pr.Samples() {
 		tgcomp.Subtitle(p.Main, fmt.Sprintf("範例 %d", i+1))
 		in, out := tgcomp.EqColumn2(p.Main, &tgcomp.ColumnConf{ID: "sample_" + c.Name})
-		tgcomp.Text(in, "輸入")
+		tgcomp.Text(in, inLabel)
 		tgcomp.Code(in, c.Input, &tgcomp.CodeConf{Language: "text"})
-		tgcomp.Text(out, "輸出")
+		tgcomp.Text(out, outLabel)
 		tgcomp.Code(out, c.Output, &tgcomp.CodeConf{Language: "text"})
 	}
 
@@ -420,13 +431,16 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 	key string, pr *problems.Problem, code string) {
 
+	if !canRun(c, lg, pr) {
+		return
+	}
 	if tgcomp.Button(c, "提交", &tgcomp.ButtonConf{ID: "submit_" + key}) {
-		var check judge.Checker
+		spec := judge.Spec{Limit: pr.TimeLimitFor(lg.id), Interactor: pr.Interactor}
 		if pr.Checker != "" {
-			check = checkRunner().Checker(pr.Checker)
+			spec.Check = checkRunner().Checker(pr.Checker)
 		}
 		st := tgcomp.Status(c, "評測中…")
-		rep, err := judge.Judge(p.Context, run, code, pr.Cases, pr.TimeLimitFor(lg.id), check,
+		rep, err := judge.Judge(p.Context, run, code, pr.Cases, spec,
 			func(done int, cr judge.CaseResult) {
 				st.Update(fmt.Sprintf("評測中 %d/%d", done, len(pr.Cases)))
 				st.Write(fmt.Sprintf("%s：%s（%s）", cr.Name, cr.Verdict, fmtTime(cr.Time)))
@@ -454,6 +468,15 @@ func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 			return
 		}
 	}
+}
+
+// canRun reports whether lg can run pr, saying why not in c.
+func canRun(c *tgframe.Container, lg *lang, pr *problems.Problem) bool {
+	if pr.Interactor != "" && !lg.interactive {
+		tgcomp.MessageWarning(c, lg.name+" 還不支援互動題，請改用其他語言")
+		return false
+	}
+	return true
 }
 
 // historyPanel lists recent submissions of a problem in all languages.
@@ -548,20 +571,32 @@ func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report, i
 		tc := pr.Cases[i]
 		box := tgcomp.Expand(c, "第一筆失敗："+cr.Name, true,
 			&tgcomp.ExpandConf{ID: "fail_" + id})
-		tgcomp.Text(box, "輸入")
-		tgcomp.Code(box, cut(tc.Input), &tgcomp.CodeConf{Language: "text"})
-		if pr.Checker != "" {
-			tgcomp.Text(box, "參考輸出（答案不唯一）")
+		interactive := pr.Interactor != ""
+		if interactive {
+			tgcomp.Text(box, "互動程式的輸入")
 		} else {
-			tgcomp.Text(box, "預期輸出")
+			tgcomp.Text(box, "輸入")
 		}
-		tgcomp.Code(box, cut(tc.Output), &tgcomp.CodeConf{Language: "text"})
+		tgcomp.Code(box, cut(tc.Input), &tgcomp.CodeConf{Language: "text"})
+		switch {
+		case interactive:
+		case pr.Checker != "":
+			tgcomp.Text(box, "參考輸出（答案不唯一）")
+			tgcomp.Code(box, cut(tc.Output), &tgcomp.CodeConf{Language: "text"})
+		default:
+			tgcomp.Text(box, "預期輸出")
+			tgcomp.Code(box, cut(tc.Output), &tgcomp.CodeConf{Language: "text"})
+		}
 		if cr.Verdict != judge.TLE {
-			tgcomp.Text(box, "你的輸出")
+			tgcomp.Text(box, stdoutLabel(pr))
 			tgcomp.Code(box, cut(cr.Stdout), &tgcomp.CodeConf{Language: "text"})
 		}
 		if cr.Message != "" {
-			tgcomp.Text(box, "checker 訊息")
+			if interactive {
+				tgcomp.Text(box, "互動程式訊息")
+			} else {
+				tgcomp.Text(box, "checker 訊息")
+			}
 			tgcomp.Code(box, cr.Message, &tgcomp.CodeConf{Language: "text"})
 		}
 		if cr.Stderr != "" {
@@ -575,7 +610,14 @@ func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report, i
 func customPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 	key string, pr *problems.Problem, code string) {
 
-	stdin := tgcomp.Textarea(c, "輸入", &tgcomp.TextareaConf{
+	if !canRun(c, lg, pr) {
+		return
+	}
+	label := "輸入"
+	if pr.Interactor != "" {
+		label = "互動程式的輸入"
+	}
+	stdin := tgcomp.Textarea(c, label, &tgcomp.TextareaConf{
 		ID:      "stdin_" + key,
 		Height:  6,
 		Default: memo.getText("stdin_"+key, pr.Cases[0].Input),
@@ -587,7 +629,7 @@ func customPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 
 	limit := pr.TimeLimitFor(lg.id)
 	done := tgcomp.Spinner(c, "執行中…")
-	res, err := run.Run(p.Context, code, stdin, limit)
+	res, err := run.Run(p.Context, code, judge.Input{Stdin: stdin, Interactor: pr.Interactor}, limit)
 	done()
 	if err != nil {
 		tgcomp.MessageDanger(c, err.Error())
@@ -601,17 +643,29 @@ func customPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 		return
 	case res.Status == judge.RunTimeout || res.Time > limit:
 		tgcomp.MessageWarning(c, "TLE："+fmtTime(res.Time))
+	case res.Judged != nil && !res.Judged.OK:
+		tgcomp.MessageDanger(c, "WA："+res.Judged.Message)
 	case res.Status == judge.RunError:
 		tgcomp.MessageDanger(c, "RE："+fmtTime(res.Time))
+	case res.Judged != nil:
+		tgcomp.MessageSuccess(c, "AC：互動程式判定正確（"+fmtTime(res.Time)+"）")
 	default:
 		tgcomp.MessageInfo(c, "執行完成："+fmtTime(res.Time))
 	}
-	tgcomp.Text(c, "stdout")
+	tgcomp.Text(c, stdoutLabel(pr))
 	tgcomp.Code(c, cut(res.Stdout), &tgcomp.CodeConf{Language: "text"})
 	if res.Stderr != "" {
 		tgcomp.Text(c, "stderr")
 		tgcomp.Code(c, cut(res.Stderr), &tgcomp.CodeConf{Language: "text"})
 	}
+}
+
+// stdoutLabel names a run's Stdout, which is a transcript for an interactive problem.
+func stdoutLabel(pr *problems.Problem) string {
+	if pr.Interactor != "" {
+		return "互動過程（→ 你的輸出，← 互動程式）"
+	}
+	return "你的輸出"
 }
 
 // memo caches drafts and submissions, backed by IndexedDB.

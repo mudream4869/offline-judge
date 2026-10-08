@@ -7,6 +7,7 @@
 //	                     "version": "2026-10-08 15:04:05", "tags": ["..."]}
 //	<id>/statement.md   a "## 提示" section becomes Hint
 //	<id>/checker.js     optional; judges outputs instead of an exact match
+//	<id>/interactor.js  optional; makes the problem interactive, .out optional
 //	<id>/tests/<name>.in, <name>.out   names starting with "sample" are shown
 package problems
 
@@ -36,6 +37,9 @@ type Problem struct {
 	Tags       []string
 	Cases      []judge.Case
 	Checker    string // checker.js source; empty for an exact match
+	// Interactor is interactor.js source; empty unless interactive. Then
+	// each case's Input is the interactor's input.
+	Interactor string
 }
 
 // TimeLimitFor returns the time limit of language lang.
@@ -211,13 +215,20 @@ func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 		return nil, err
 	}
 
-	cases, err := loadCases(fsys, path.Join(id, "tests"))
+	checker, err := readOptional(fsys, path.Join(id, CheckerFile))
 	if err != nil {
 		return nil, err
 	}
+	interactor, err := readOptional(fsys, path.Join(id, InteractorFile))
+	if err != nil {
+		return nil, err
+	}
+	if checker != "" && interactor != "" {
+		return nil, fmt.Errorf("%s 與 %s 只能有一個", CheckerFile, InteractorFile)
+	}
 
-	checker, err := fs.ReadFile(fsys, path.Join(id, CheckerFile))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	cases, err := loadCases(fsys, path.Join(id, "tests"), interactor != "")
+	if err != nil {
 		return nil, err
 	}
 
@@ -232,12 +243,25 @@ func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 		Version:    m.Version,
 		Tags:       m.Tags,
 		Cases:      cases,
-		Checker:    string(checker),
+		Checker:    checker,
+		Interactor: interactor,
 	}, nil
 }
 
-// CheckerFile is the optional checker of a problem.
-const CheckerFile = "checker.js"
+// CheckerFile and InteractorFile are optional files of a problem.
+const (
+	CheckerFile    = "checker.js"
+	InteractorFile = "interactor.js"
+)
+
+// readOptional reads name, or returns "" if it doesn't exist.
+func readOptional(fsys fs.FS, name string) (string, error) {
+	bs, err := fs.ReadFile(fsys, name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	return string(bs), err
+}
 
 const hintHeading = "## 提示"
 
@@ -266,7 +290,8 @@ func splitHint(st string) (stmt, hint string) {
 	return strings.TrimRight(stmt, "\n") + "\n", hint
 }
 
-func loadCases(fsys fs.FS, dir string) ([]judge.Case, error) {
+// loadCases reads the tests in dir; with optionalOut a missing .out is "".
+func loadCases(fsys fs.FS, dir string, optionalOut bool) ([]judge.Case, error) {
 	ins, err := fs.Glob(fsys, path.Join(dir, "*.in"))
 	if err != nil {
 		return nil, err
@@ -292,7 +317,7 @@ func loadCases(fsys fs.FS, dir string) ([]judge.Case, error) {
 			return nil, err
 		}
 		outBs, err := fs.ReadFile(fsys, strings.TrimSuffix(in, ".in")+".out")
-		if err != nil {
+		if err != nil && !(optionalOut && errors.Is(err, fs.ErrNotExist)) {
 			return nil, err
 		}
 		cases = append(cases, judge.Case{
