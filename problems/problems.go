@@ -3,7 +3,8 @@
 // Each problem is a directory:
 //
 //	problems.json       every problem.json in one list, made by MakeList
-//	<id>/problem.json   {"title": "...", "time_limit_ms": 1000, "version": "2026-10-08 15:04:05", "tags": ["..."]}
+//	<id>/problem.json   {"title": "...", "time_limit_ms": 1000, "time_limits_ms": {"cpp": 500},
+//	                     "version": "2026-10-08 15:04:05", "tags": ["..."]}
 //	<id>/statement.md   a "## 提示" section becomes Hint
 //	<id>/checker.js     optional; judges outputs instead of an exact match
 //	<id>/tests/<name>.in, <name>.out   names starting with "sample" are shown
@@ -29,10 +30,20 @@ type Problem struct {
 	Statement string
 	Hint      string // markdown, shown collapsed; empty if none
 	TimeLimit time.Duration
-	Version   string // date of the last change, e.g. "2026-10-08 15:04:05"; may be empty
-	Tags      []string
-	Cases     []judge.Case
-	Checker   string // checker.js source; empty for an exact match
+	// Per-language overrides of TimeLimit, keyed by language id ("py", "cpp", "js").
+	TimeLimits map[string]time.Duration
+	Version    string // date of the last change, e.g. "2026-10-08 15:04:05"; may be empty
+	Tags       []string
+	Cases      []judge.Case
+	Checker    string // checker.js source; empty for an exact match
+}
+
+// TimeLimitFor returns the time limit of language lang.
+func (p *Problem) TimeLimitFor(lang string) time.Duration {
+	if t, ok := p.TimeLimits[lang]; ok {
+		return t
+	}
+	return p.TimeLimit
 }
 
 // Samples returns the cases shown in the statement.
@@ -48,17 +59,19 @@ func (p *Problem) Samples() []judge.Case {
 
 // Meta is what problem.json holds.
 type Meta struct {
-	Title     string
-	TimeLimit time.Duration
-	Version   string
-	Tags      []string
+	Title      string
+	TimeLimit  time.Duration
+	TimeLimits map[string]time.Duration
+	Version    string
+	Tags       []string
 }
 
 type meta struct {
-	Title       string   `json:"title"`
-	TimeLimitMS int      `json:"time_limit_ms"`
-	Version     string   `json:"version,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
+	Title        string         `json:"title"`
+	TimeLimitMS  int            `json:"time_limit_ms"`
+	TimeLimitsMS map[string]int `json:"time_limits_ms,omitempty"`
+	Version      string         `json:"version,omitempty"`
+	Tags         []string       `json:"tags,omitempty"`
 }
 
 // ParseMeta parses problem.json.
@@ -74,11 +87,22 @@ func (m meta) parse() Meta {
 	if m.TimeLimitMS <= 0 {
 		m.TimeLimitMS = 1000
 	}
+	var limits map[string]time.Duration
+	for lang, ms := range m.TimeLimitsMS {
+		if ms <= 0 {
+			continue
+		}
+		if limits == nil {
+			limits = map[string]time.Duration{}
+		}
+		limits[lang] = time.Duration(ms) * time.Millisecond
+	}
 	return Meta{
-		Title:     m.Title,
-		TimeLimit: time.Duration(m.TimeLimitMS) * time.Millisecond,
-		Version:   m.Version,
-		Tags:      m.Tags,
+		Title:      m.Title,
+		TimeLimit:  time.Duration(m.TimeLimitMS) * time.Millisecond,
+		TimeLimits: limits,
+		Version:    m.Version,
+		Tags:       m.Tags,
 	}
 }
 
@@ -199,15 +223,16 @@ func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 
 	stmt, hint := splitHint(string(st))
 	return &Problem{
-		ID:        id,
-		Title:     m.Title,
-		Statement: stmt,
-		Hint:      hint,
-		TimeLimit: m.TimeLimit,
-		Version:   m.Version,
-		Tags:      m.Tags,
-		Cases:     cases,
-		Checker:   string(checker),
+		ID:         id,
+		Title:      m.Title,
+		Statement:  stmt,
+		Hint:       hint,
+		TimeLimit:  m.TimeLimit,
+		TimeLimits: m.TimeLimits,
+		Version:    m.Version,
+		Tags:       m.Tags,
+		Cases:      cases,
+		Checker:    string(checker),
 	}, nil
 }
 

@@ -184,7 +184,7 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 			shown = append(shown, e)
 			ids = append(ids, e.ID)
 			rows = append(rows, []string{e.Title, strings.Join(e.Tags, "、"),
-				fmtTime(e.TimeLimit), e.Version, off})
+				fmtLimits(e.TimeLimit, e.TimeLimits), e.Version, off})
 		}
 		sel = tgcomp.DataFrame(c, []string{"題目", "標籤", "時間限制", "版本", "可離線"}, rows,
 			(&tgcomp.DataFrameConf{
@@ -364,7 +364,7 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	}
 
 	tgcomp.Markdown(p.Main, pr.Statement)
-	info := fmt.Sprintf("時間限制：%d ms", pr.TimeLimit.Milliseconds())
+	info := fmt.Sprintf("時間限制（%s）：%d ms", lg.name, pr.TimeLimitFor(lg.id).Milliseconds())
 	if pr.Version != "" {
 		info += "，版本：" + pr.Version
 	}
@@ -412,7 +412,7 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 
 	submitTab, customTab, histTab := tgcomp.Tab3(p.Main, "提交", "自訂輸入", "紀錄")
 	submitPanel(p, submitTab, run, lg, key, pr, code)
-	customPanel(p, customTab, run, key, pr, code)
+	customPanel(p, customTab, run, lg, key, pr, code)
 	historyPanel(histTab, pr)
 	return nil
 }
@@ -426,7 +426,7 @@ func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 			check = checkRunner().Checker(pr.Checker)
 		}
 		st := tgcomp.Status(c, "評測中…")
-		rep, err := judge.Judge(p.Context, run, code, pr.Cases, pr.TimeLimit, check,
+		rep, err := judge.Judge(p.Context, run, code, pr.Cases, pr.TimeLimitFor(lg.id), check,
 			func(done int, cr judge.CaseResult) {
 				st.Update(fmt.Sprintf("評測中 %d/%d", done, len(pr.Cases)))
 				st.Write(fmt.Sprintf("%s：%s（%s）", cr.Name, cr.Verdict, fmtTime(cr.Time)))
@@ -572,8 +572,8 @@ func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report, i
 	}
 }
 
-func customPanel(p *tgframe.Params, c *tgframe.Container, run runner, key string,
-	pr *problems.Problem, code string) {
+func customPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
+	key string, pr *problems.Problem, code string) {
 
 	stdin := tgcomp.Textarea(c, "輸入", &tgcomp.TextareaConf{
 		ID:      "stdin_" + key,
@@ -585,8 +585,9 @@ func customPanel(p *tgframe.Params, c *tgframe.Container, run runner, key string
 		return
 	}
 
+	limit := pr.TimeLimitFor(lg.id)
 	done := tgcomp.Spinner(c, "執行中…")
-	res, err := run.Run(p.Context, code, stdin, pr.TimeLimit)
+	res, err := run.Run(p.Context, code, stdin, limit)
 	done()
 	if err != nil {
 		tgcomp.MessageDanger(c, err.Error())
@@ -598,7 +599,7 @@ func customPanel(p *tgframe.Params, c *tgframe.Container, run runner, key string
 		tgcomp.MessageDanger(c, "CE：編譯錯誤")
 		tgcomp.Code(c, cut(res.Stderr), &tgcomp.CodeConf{Language: "text"})
 		return
-	case res.Status == judge.RunTimeout || res.Time > pr.TimeLimit:
+	case res.Status == judge.RunTimeout || res.Time > limit:
 		tgcomp.MessageWarning(c, "TLE："+fmtTime(res.Time))
 	case res.Status == judge.RunError:
 		tgcomp.MessageDanger(c, "RE："+fmtTime(res.Time))
@@ -765,6 +766,20 @@ func verdictName(v judge.Verdict) string {
 
 func fmtTime(d time.Duration) string {
 	return fmt.Sprintf("%d ms", d.Milliseconds())
+}
+
+// fmtLimits shows limit, then each language that overrides it, e.g. "2000 ms（C++ 500 ms）".
+func fmtLimits(limit time.Duration, byLang map[string]time.Duration) string {
+	var over []string
+	for _, l := range langs {
+		if t, ok := byLang[l.id]; ok {
+			over = append(over, l.name+" "+fmtTime(t))
+		}
+	}
+	if len(over) == 0 {
+		return fmtTime(limit)
+	}
+	return fmtTime(limit) + "（" + strings.Join(over, "、") + "）"
 }
 
 func cut(s string) string {

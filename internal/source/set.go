@@ -33,12 +33,13 @@ type Store interface {
 
 // Entry is a problem in the list.
 type Entry struct {
-	ID        string
-	Title     string
-	TimeLimit time.Duration
-	Version   string
-	Tags      []string
-	Cached    bool // statement and tests are stored, so it works offline
+	ID         string
+	Title      string
+	TimeLimit  time.Duration
+	TimeLimits map[string]time.Duration // per-language overrides
+	Version    string
+	Tags       []string
+	Cached     bool // statement and tests are stored, so it works offline
 }
 
 // listFile lists the problems of a source, so the list is one download.
@@ -153,7 +154,8 @@ func (s *Set) setIndex(ix *Index) error {
 	var entries []Entry
 	metas := map[string]problems.Meta{}
 	for _, e := range list {
-		entries = append(entries, Entry{ID: e.ID, Title: e.Title, TimeLimit: e.TimeLimit, Version: e.Version, Tags: e.Tags})
+		entries = append(entries, Entry{ID: e.ID, Title: e.Title, TimeLimit: e.TimeLimit,
+			TimeLimits: e.TimeLimits, Version: e.Version, Tags: e.Tags})
 		metas[e.ID] = e.Meta
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })

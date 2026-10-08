@@ -83,7 +83,7 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 - `<bits/stdc++.h>` 是自己寫的（`web/stdc++.h`），只含常用標頭；在 build 時預先編成 PCH，
   有 include 它的程式才會用到
 - wasi 版 libc++ 不支援例外：`throw` 直接 abort 判 RE，`catch` 不會被執行
-- 執行速度約為原生的 1/3，時間限制目前沒有依語言調整
+- 執行速度約為原生的 1/3（時間限制可依語言調整，見「新增題目」的 `time_limits_ms`）
 - 第一次選 C++ 時才下載 clang（gzip 後約 27 MB）加上 PCH（約 10 MB）；編譯一次約 1 秒
 - clang 與 PCH 放在 `dist/cpp/`，不在 `assets/` 裡，所以 `-offline` 的 service worker
   不會預先快取它們：C++ 離線時不能用（瀏覽器的 HTTP 快取還在的話仍可能可以）
@@ -120,6 +120,10 @@ go test ./problems -update   # 從每題的 problem.json 重新產生 problems.j
 
 `version` 是題目最後修改的時間（`YYYY-MM-DD hh:mm:ss`），改了敘述、測資或時間限制就要更新；
 提交紀錄會記下評測時的版本，版本不同時標示「舊版」。
+
+`time_limits_ms` 選填，依語言（`py`、`cpp`、`js`）覆寫 `time_limit_ms`，沒列出的語言用 `time_limit_ms`。
+只在其他語言用錯的複雜度也能過時才需要，例如 `0006-rmq` 的 `{"cpp": 500, "js": 1000}`。
+題目頁顯示目前語言的時限，題目列表顯示 `time_limit_ms` 與有覆寫的語言，例如 `2000 ms（C++ 500 ms、JavaScript 1000 ms）`。
 
 `tags` 選填，會顯示在題目列表與題目頁，列表可依標籤篩選（選多個時只列出同時有這些標籤的題目）。
 

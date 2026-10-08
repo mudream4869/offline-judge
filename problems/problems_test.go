@@ -14,6 +14,9 @@ import (
 	"github.com/mudream4869/offline-judge/internal/judge"
 )
 
+// langIDs are the language ids of cmd/offline-judge.
+var langIDs = map[string]bool{"py": true, "cpp": true, "js": true}
+
 // TestAll checks the problems in this directory.
 func TestAll(t *testing.T) {
 	ps, err := Load(os.DirFS("."))
@@ -33,6 +36,11 @@ func TestAll(t *testing.T) {
 		}
 		if len(p.Tags) == 0 {
 			t.Errorf("%s: no tags", p.ID)
+		}
+		for lang := range p.TimeLimits {
+			if !langIDs[lang] {
+				t.Errorf("%s: unknown language in time_limits_ms: %q", p.ID, lang)
+			}
 		}
 		if len(p.Samples()) == 0 {
 			t.Errorf("%s: no samples", p.ID)
@@ -130,5 +138,22 @@ func TestSplitHint(t *testing.T) {
 	}
 	if stmt, hint := splitHint("# T\n"); stmt != "# T\n" || hint != "" {
 		t.Errorf("no hint: got %q, %q", stmt, hint)
+	}
+}
+
+func TestTimeLimitFor(t *testing.T) {
+	m, err := ParseMeta([]byte(`{"title": "x", "time_limit_ms": 2000, "time_limits_ms": {"cpp": 500, "js": 0}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &Problem{TimeLimit: m.TimeLimit, TimeLimits: m.TimeLimits}
+	for lang, want := range map[string]time.Duration{
+		"cpp": 500 * time.Millisecond,
+		"py":  2 * time.Second,
+		"js":  2 * time.Second, // non-positive is ignored
+	} {
+		if got := p.TimeLimitFor(lang); got != want {
+			t.Errorf("TimeLimitFor(%q) = %v, want %v", lang, got, want)
+		}
 	}
 }
