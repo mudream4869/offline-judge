@@ -13,5 +13,10 @@
     "id": "0003-fibonacci",
     "title": "費氏數列",
     "time_limit_ms": 2000
+  },
+  {
+    "id": "0004-two-sum",
+    "title": "兩數之和",
+    "time_limit_ms": 1000
   }
 ]
