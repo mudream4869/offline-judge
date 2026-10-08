@@ -1,6 +1,6 @@
 # Offline Judge
 
-![Offline Judge](docs/banner.webp)
+![Offline Judge](web/banner.webp)
 
 完全在瀏覽器裡執行的 Python / C++ / JavaScript / Go 解題系統，不需要後端。
 
