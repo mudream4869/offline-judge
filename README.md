@@ -79,11 +79,11 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 格式為 `https://github.com/<owner>/<repo>[/tree/<ref>[/<資料夾>]]`，ref 不能含 `/`，只支援公開 repo。
 
 - 載入列表：用 GitHub API 把 ref 解析成 commit，再一次列出整個 tree，並下載題目列表 `problems.json`（只有一個檔案）
-- 打開題目時才下載 `statement.md` 與測資，檔案來自 `raw.githubusercontent.com`（固定在該 commit），
+- 開啟題目時才下載 `statement.md` 與測資，檔案來自 `raw.githubusercontent.com`（固定在該 commit），
   下載後用 blob sha 驗證並存進 IndexedDB
 - 之後啟動先用快取顯示，背景只打 1 次 API 檢查 commit 有沒有變；有變才重新列 tree，沒變過的檔案不重抓
 - 未登入的 GitHub API 每小時 60 次，正常使用每次啟動 1 次
-- 打開過的題目可離線使用；「設定」的「全部下載」可一次下載全部題目
+- 開啟過的題目可離線使用；「設定」的「全部下載」可一次下載全部題目
 
 抓取邏輯在 `internal/source`（用 Go 的 `net/http`，在瀏覽器裡走 fetch）。
 
