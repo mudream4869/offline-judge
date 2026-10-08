@@ -1,0 +1,5 @@
+1 3
+-2
+getmin 1 1
+set 1 4
+getmin 1 1

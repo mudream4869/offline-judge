@@ -1,0 +1,8 @@
+5 6
+5 3 8 6 1
+getmin 1 3
+getmin 4 5
+set 5 9
+getmin 3 5
+set 2 7
+getmin 1 5
