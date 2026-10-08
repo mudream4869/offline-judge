@@ -8,7 +8,7 @@
   [browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim) 在可砍掉的 worker 裡執行
 - 執行 JavaScript：直接用瀏覽器的 JS 引擎，在 worker 裡模擬 Node 的 stdin / stdout（見下方「JavaScript 的限制」）
 - 測資不保密，題目從 GitHub 下載（見下方「題目來源」）
-- 頁面：首頁、題目列表（`#/problems`，點表格裡的題目進入，「返回題目列表」回到列表）、
+- 頁面：首頁、題目列表（`#/problems`，可依標籤篩選，點表格裡的題目進入，「返回題目列表」回到列表）、
   提交紀錄（`#/submissions`，所有題目的提交，點一筆看程式碼與結果）、設定（`#/settings`）
 - 程式碼、自訂輸入、語言選擇與提交紀錄存在瀏覽器的 IndexedDB（`offline-judge`），重新整理後還在
 
@@ -106,7 +106,7 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 
 ```
 problems/0004-xxx/
-  problem.json    {"title": "...", "time_limit_ms": 1000, "version": "2026-10-08 15:04:05"}
+  problem.json    {"title": "...", "time_limit_ms": 1000, "version": "2026-10-08 15:04:05", "tags": ["入門"]}
   statement.md    題目敘述（Markdown，`$...$` / `$$...$$` 為 LaTeX 公式）；「## 提示」段落會收合顯示
   tests/
     sample1.in / sample1.out   sample 開頭的會顯示在題目裡
@@ -120,6 +120,8 @@ go test ./problems -update   # 從每題的 problem.json 重新產生 problems.j
 
 `version` 是題目最後修改的時間（`YYYY-MM-DD hh:mm:ss`），改了敘述、測資或時間限制就要更新；
 提交紀錄會記下評測時的版本，版本不同時標示「舊版」。
+
+`tags` 選填，會顯示在題目列表與題目頁，列表可依標籤篩選（選多個時只列出同時有這些標籤的題目）。
 
 `problems.json` 沒更新、或 `version` 格式不對的話 `go test` 會失敗。其他來源也要在資料夾根目錄放 `problems.json`：
 

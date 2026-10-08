@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
+	"strings"
 	"sync"
 	"syscall/js"
 	"time"
@@ -151,22 +153,40 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 		}
 	}
 
-	ids := make([]string, len(es))
-	rows := make([][]string, len(es))
-	for i, e := range es {
-		off := ""
-		if e.Cached {
-			off = "✓"
-		}
-		ids[i] = e.ID
-		rows[i] = []string{e.Title, fmtTime(e.TimeLimit), e.Version, off}
-	}
 	slot := tgcomp.Empty(p.Main)
+	var shown []*source.Entry
 	var sel []int
 	slot.With(func(c *tgframe.Container) {
 		tgcomp.Title(c, "題目列表")
 		tgcomp.Caption(c, "點一題開始作答")
-		sel = tgcomp.DataFrame(c, []string{"題目", "時間限制", "版本", "可離線"}, rows,
+		tags := allTags(es)
+		var want []string
+		if len(tags) > 0 {
+			for _, i := range tgcomp.MultiSelect(c, "標籤", tags, &tgcomp.MultiSelectConf{
+				Base:        tgframe.Base{ID: "problem_tags"},
+				Placeholder: "全部",
+			}) {
+				want = append(want, tags[i])
+			}
+		}
+
+		var ids []string
+		var rows [][]string
+		for i := range es {
+			e := &es[i]
+			if !hasTags(e.Tags, want) {
+				continue
+			}
+			off := ""
+			if e.Cached {
+				off = "✓"
+			}
+			shown = append(shown, e)
+			ids = append(ids, e.ID)
+			rows = append(rows, []string{e.Title, strings.Join(e.Tags, "、"),
+				fmtTime(e.TimeLimit), e.Version, off})
+		}
+		sel = tgcomp.DataFrame(c, []string{"題目", "標籤", "時間限制", "版本", "可離線"}, rows,
 			(&tgcomp.DataFrameConf{
 				Base:      tgframe.Base{ID: "problem_list"},
 				PageSize:  100,
@@ -179,8 +199,28 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 	}
 	// Clearing drops the list's pick too, so it comes back unpicked.
 	slot.Clear()
-	p.State.Set(pickedKey, ids[sel[0]])
-	return &es[sel[0]]
+	p.State.Set(pickedKey, shown[sel[0]].ID)
+	return shown[sel[0]]
+}
+
+// allTags returns the tags of es, sorted, without duplicates.
+func allTags(es []source.Entry) []string {
+	var tags []string
+	for _, e := range es {
+		tags = append(tags, e.Tags...)
+	}
+	slices.Sort(tags)
+	return slices.Compact(tags)
+}
+
+// hasTags reports whether tags contains every tag in want.
+func hasTags(tags, want []string) bool {
+	for _, w := range want {
+		if !slices.Contains(tags, w) {
+			return false
+		}
+	}
+	return true
 }
 
 // Settings sets the problem source.
@@ -327,6 +367,9 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	info := fmt.Sprintf("時間限制：%d ms", pr.TimeLimit.Milliseconds())
 	if pr.Version != "" {
 		info += "，版本：" + pr.Version
+	}
+	if len(pr.Tags) > 0 {
+		info += "，標籤：" + strings.Join(pr.Tags, "、")
 	}
 	tgcomp.Caption(p.Main, info)
 	if pr.Checker != "" {
