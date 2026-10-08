@@ -1,7 +1,7 @@
 {
   "name": "Offline Judge",
   "short_name": "Offline Judge",
-  "description": "完全在瀏覽器裡執行的 Python / C++ 解題系統",
+  "description": "完全在瀏覽器裡執行的 Python / C++ / JavaScript 解題系統",
   "lang": "zh-Hant",
   "start_url": ".",
   "scope": ".",

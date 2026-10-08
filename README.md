@@ -1,11 +1,12 @@
 # Offline Judge
 
-完全在瀏覽器裡執行的 Python / C++ 解題系統，不需要後端。
+完全在瀏覽器裡執行的 Python / C++ / JavaScript 解題系統，不需要後端。
 
 - UI、題目、評測邏輯：Go，用 [toolgui](https://github.com/voilelab/toolgui) 編成 wasm
 - 執行 Python：[Pyodide](https://pyodide.org/)，跑在獨立的 module worker，超時直接 `terminate()`，並預先暖機一個備用 worker
 - 執行 C++（PoC）：[YoWASP clang](https://yowasp.org/) 編成 WASI wasm，再用
   [browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim) 在可砍掉的 worker 裡執行
+- 執行 JavaScript：直接用瀏覽器的 JS 引擎，在 worker 裡模擬 Node 的 stdin / stdout（見下方「JavaScript 的限制」）
 - 測資不保密，題目從 GitHub 下載（見下方「題目來源」）
 - 頁面：首頁、題目列表（`#/problems`，點表格裡的題目進入，「返回題目列表」回到列表）、
   提交紀錄（`#/submissions`，所有題目的提交，點一筆看程式碼與結果）、設定（`#/settings`）
@@ -17,7 +18,8 @@
 page ── toolgui worker (Go wasm：UI / 題目 / 比對)
             ├── pyworker.mjs   (Pyodide：收 code + stdin，回 stdout / stderr / 耗時)
             ├── cppcompile.mjs (clang：收 code，回 WebAssembly.Module 或編譯錯誤；常駐)
-            └── cpprun.mjs     (收 module + stdin，回 stdout / stderr / 耗時)
+            ├── cpprun.mjs     (收 module + stdin，回 stdout / stderr / 耗時)
+            └── jsrun.mjs      (收 code + stdin，回 stdout / stderr / 耗時；每次執行換新的 worker)
 ```
 
 執行用的 worker 介面為：
@@ -40,7 +42,7 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 | AC | 輸出相符（忽略行尾空白與結尾空行） |
 | WA | 輸出不符 |
 | CE | 編譯錯誤（C++），不執行任何測資 |
-| RE | 例外、非零 `SystemExit` 或非零 exit code |
+| RE | 例外、非零 `SystemExit` 或非零 exit code（含 `process.exit`） |
 | TLE | 耗時超過限制；超過限制 +1 秒仍未結束就砍掉 worker |
 | SKIP | 第一筆 TLE 之後的測資不再執行（每次 TLE 都要重載 Pyodide） |
 
@@ -85,6 +87,18 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 - clang 與 PCH 放在 `dist/cpp/`，不在 `assets/` 裡，所以 `-offline` 的 service worker
   不會預先快取它們：C++ 離線時不能用（瀏覽器的 HTTP 快取還在的話仍可能可以）
 
+## JavaScript 的限制
+
+- 只模擬解題常用的 Node API：
+  - `require('fs')`：`readFileSync(0 | '/dev/stdin')`、`writeSync`
+  - `require('readline')`：`createInterface` 的 `line` / `close` 事件與 `for await`
+  - `process`：`stdin` 的 `data` / `end`、`stdout.write`、`exit`、`exitCode`、`hrtime`
+  - `console.log` 的格式是 Node 的簡化版（陣列、物件只輸出一行）
+  - 其他模組 `require` 會丟錯，判 RE
+- 遞迴深度約 5000 層（Chromium 的 worker stack 較小，無法調整），太深會 `RangeError` 判 RE；
+  深度大的 DFS 要改成迴圈
+- 程式結束的判斷：stdin 事件送完、沒有未完成的 timer 就結束；卡在永遠不會 resolve 的 Promise 不算 TLE
+
 ## 新增題目
 
 在 `problems/` 下開一個資料夾，再更新 `problems/problems.json`：
@@ -127,7 +141,7 @@ Pyodide、WASI shim 與 `web/` 準備到 `.cache/assets`，並把 clang 與 PCH 
 go tool toolgui-wasm serve -o dist -assets .cache/assets ./cmd/offline-judge
 ```
 
-直接 serve 時不帶 `-assets` 的話，頁面能開，但沒有 Python / C++ 環境可以執行；
+直接 serve 時不帶 `-assets` 的話，頁面能開，但沒有 Python / C++ / JavaScript 環境可以執行；
 `dist/cpp/` 要先由 `build.sh` 產生，C++ 才能用。
 
 `dist/` 是靜態網站，可直接放到 GitHub Pages（見 `.github/workflows/pages.yml`，

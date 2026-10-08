@@ -1,6 +1,6 @@
 //go:build js && wasm
 
-// Command offline-judge is a Python / C++ judge that runs entirely in the browser.
+// Command offline-judge is a Python / C++ / JavaScript judge that runs entirely in the browser.
 package main
 
 import (
@@ -54,7 +54,7 @@ var (
 			hl:      "python",
 			code:    "import sys\ninput = sys.stdin.readline\n\n",
 			loading: "載入中（首次約需數秒）",
-			newRun:  func() runner { return NewPyRunner(assetURL("pyworker.mjs")) },
+			newRun:  func() runner { return NewCodeRunner(assetURL("pyworker.mjs"), "Python") },
 		},
 		{
 			name: "C++",
@@ -67,10 +67,18 @@ var (
 				return NewCppRunner(assetURL("cppcompile.mjs"), assetURL("cpprun.mjs"))
 			},
 		},
+		{
+			name:    "JavaScript",
+			id:      "js",
+			hl:      "javascript",
+			code:    "const lines = require('fs').readFileSync(0, 'utf8').split('\\n')\n\n",
+			loading: "載入中",
+			newRun:  func() runner { return NewCodeRunner(assetURL("jsrun.mjs"), "JavaScript") },
+		},
 	}
 )
 
-const intro = `完全在瀏覽器裡執行的 Python / C++ 解題系統，不需要後端。
+const intro = `完全在瀏覽器裡執行的 Python / C++ / JavaScript 解題系統，不需要後端。
 
 - 到「題目列表」點一題，寫好程式後「提交」即可評測
 - 「自訂輸入」可以用自己的輸入先跑跑看
