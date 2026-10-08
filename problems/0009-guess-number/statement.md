@@ -15,7 +15,7 @@
 
 詢問最多 $30$ 次，`!` 不算在內。
 
-建議每次輸出後 flush（C++ 用 `endl` 或 `fflush(stdout)`，Python 用 `print(..., flush=True)`）。本系統不 flush 也收得到，但其他評測系統多半會因此卡住。
+每次輸出後要 flush，互動程式才收得到：C++ 用 `endl` 或 `fflush(stdout)`，Python 用 `print(..., flush=True)`，Go 用 `bufio.Writer` 時要呼叫 `Flush()`。（本系統的 C++ 與 Python 不 flush 也收得到，但其他評測系統多半會因此卡住。）
 
 ## 範例
 

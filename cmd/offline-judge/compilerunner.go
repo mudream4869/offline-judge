@@ -16,9 +16,10 @@ const compileTimeout = time.Minute
 
 var errCompileTimeout = errors.New("編譯逾時")
 
-// CppRunner implements judge.Runner: clang in a long-lived worker, programs
-// in a killable pool.
-type CppRunner struct {
+// CompileRunner implements judge.Runner for compiled languages: the
+// compiler in a long-lived worker, programs in a killable pool.
+type CompileRunner struct {
+	name  string
 	ccURL string
 	exec  *pool
 
@@ -31,29 +32,30 @@ type CppRunner struct {
 	ce     string
 }
 
-func NewCppRunner(ccURL, runURL string) *CppRunner {
-	return &CppRunner{
+func NewCompileRunner(name, ccURL, runURL string) *CompileRunner {
+	return &CompileRunner{
+		name:  name,
 		ccURL: ccURL,
 		cc:    spawnWorker(ccURL),
-		exec:  newPool(runURL, "C++"),
+		exec:  newPool(runURL, name),
 	}
 }
 
-// Ready reports whether clang has loaded.
-func (r *CppRunner) Ready() bool {
+// Ready reports whether the compiler has loaded.
+func (r *CompileRunner) Ready() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.cc.isReady()
 }
 
-func (r *CppRunner) compile(ctx context.Context, code string) error {
+func (r *CompileRunner) compile(ctx context.Context, code string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.code == code && (!r.module.IsUndefined() || r.ce != "") {
 		return nil
 	}
 
-	if err := r.cc.wait(ctx, "C++"); err != nil {
+	if err := r.cc.wait(ctx, r.name); err != nil {
 		if r.cc.loadErr != nil {
 			r.cc.kill()
 			r.cc = spawnWorker(r.ccURL)
@@ -66,7 +68,7 @@ func (r *CppRunner) compile(ctx context.Context, code string) error {
 	r.seq++
 	data, err := r.cc.post(ctx, r.seq, msg, time.After(compileTimeout))
 	if err == errTimeout {
-		// Probably stuck: restart clang.
+		// Probably stuck: restart the compiler.
 		r.cc.kill()
 		r.cc = spawnWorker(r.ccURL)
 		return errCompileTimeout
@@ -86,7 +88,7 @@ func (r *CppRunner) compile(ctx context.Context, code string) error {
 	return nil
 }
 
-func (r *CppRunner) Run(ctx context.Context, code string, in judge.Input,
+func (r *CompileRunner) Run(ctx context.Context, code string, in judge.Input,
 	limit time.Duration) (judge.RunResult, error) {
 
 	if err := r.compile(ctx, code); err != nil {

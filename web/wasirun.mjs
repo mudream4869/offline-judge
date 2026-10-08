@@ -1,5 +1,5 @@
-// Runs a compiled WASI module. Cheap to start, so the Go side kills it on
-// timeout and uses a spare.
+// Runs a compiled WASI module (C++, Go). Cheap to start, so the Go side
+// kills it on timeout and uses a spare.
 //
 // in:  {id, module, stdin, interactor?}
 // out: {type: "ready"}
@@ -72,7 +72,7 @@ self.onmessage = async ({ data: { id, module, stdin, interactor } }) => {
     }
   }
   const in0 = ia ? new InteractiveStdin(ia, out) : new OpenFile(new File(enc.encode(stdin)))
-  const w = new WASI(['main'], [], [in0, out, err])
+  const w = new WASI(['main'], [], [in0, out, err], { debug: false })
   let status = 'ok'
   let t0 = performance.now()
   try {

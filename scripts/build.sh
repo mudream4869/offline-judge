@@ -46,6 +46,29 @@ rm -rf "$LAZY"
 mkdir -p "$LAZY/clang"
 cp "$CLANG"/gen/*.js "$CLANG"/gen/*.wasm "$CLANG"/gen/*.tar "$LAZY/clang/"
 
+# The Go toolchain built for wasip1, plus the stdlib archives programs may
+# import (std.tar: importcfg and flat *.a files). Also lazy.
+GO_PKGS="bufio bytes cmp container/heap container/list container/ring errors fmt io
+  maps math math/big math/bits math/rand math/rand/v2 os regexp slices sort strconv
+  strings time unicode unicode/utf8"
+GOLAZY=dist/go
+rm -rf "$GOLAZY"
+mkdir -p "$GOLAZY"
+for t in compile link; do
+  GOOS=wasip1 GOARCH=wasm go build -pgo=off -ldflags "-s -w" -o "$GOLAZY/$t.wasm" "cmd/$t"
+done
+GOSTD=$CACHE/gostd
+rm -rf "$GOSTD"
+mkdir -p "$GOSTD"
+# shellcheck disable=SC2086
+GOOS=wasip1 GOARCH=wasm go list -export -deps -f '{{if .Export}}{{.ImportPath}} {{.Export}}{{end}}' \
+  runtime $GO_PKGS | while read -r pkg file; do
+  name=${pkg//\//_}.a
+  cp "$file" "$GOSTD/$name"
+  echo "packagefile $pkg=$name" >> "$GOSTD/importcfg"
+done
+tar --format=ustar -cf "$GOLAZY/std.tar" -C "$GOSTD" .
+
 # Precompiled <bits/stdc++.h>, rebuilt when the header, flags or clang change.
 key=$( (cat web/stdc++.h web/cppflags.mjs; echo "$CLANG_VERSION") | sha256sum | cut -c1-16)
 PCH=$CACHE/stdc++-$key.pch

@@ -31,7 +31,7 @@ type Problem struct {
 	Statement string
 	Hint      string // markdown, shown collapsed; empty if none
 	TimeLimit time.Duration
-	// Per-language overrides of TimeLimit, keyed by language id ("py", "cpp", "js").
+	// Per-language overrides of TimeLimit, keyed by language id ("py", "cpp", "js", "go").
 	TimeLimits map[string]time.Duration
 	Version    string // date of the last change, e.g. "2026-10-08 15:04:05"; may be empty
 	Tags       []string
