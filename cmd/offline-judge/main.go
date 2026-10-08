@@ -178,15 +178,16 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 		}
 	}
 
-	slot := tgcomp.Empty(p.Main)
-	var shown []*source.Entry
-	var sel []int
-	slot.With(func(c *tgframe.Container) {
-		tgcomp.Title(c, "題目列表")
-		tgcomp.Caption(c, "點一題開始作答")
-		tags := allTags(es)
-		var want []string
-		if len(tags) > 0 {
+	// Filters sit in the sidebar; both slots clear once a problem is picked.
+	side := tgcomp.Empty(p.Sidebar)
+	var query string
+	var want []string
+	side.With(func(c *tgframe.Container) {
+		query = strings.ToLower(strings.TrimSpace(tgcomp.Textbox(c, "搜尋", &tgcomp.TextboxConf{
+			Base:        tgframe.Base{ID: "problem_search"},
+			Placeholder: "編號或題目",
+		})))
+		if tags := allTags(es); len(tags) > 0 {
 			for _, i := range tgcomp.MultiSelect(c, "標籤", tags, &tgcomp.MultiSelectConf{
 				Base:        tgframe.Base{ID: "problem_tags"},
 				Placeholder: "全部",
@@ -194,12 +195,22 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 				want = append(want, tags[i])
 			}
 		}
+	})
+
+	slot := tgcomp.Empty(p.Main)
+	var shown []*source.Entry
+	var sel []int
+	slot.With(func(c *tgframe.Container) {
+		tgcomp.Title(c, "題目列表")
+		tgcomp.Caption(c, "點一題開始作答")
 
 		var ids []string
 		var rows [][]string
 		for i := range es {
 			e := &es[i]
-			if !hasTags(e.Tags, want) {
+			num := problemNumber(e.ID)
+			if !hasTags(e.Tags, want) ||
+				!strings.Contains(strings.ToLower(num+" "+e.Title), query) {
 				continue
 			}
 			off := ""
@@ -208,24 +219,41 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 			}
 			shown = append(shown, e)
 			ids = append(ids, e.ID)
-			rows = append(rows, []string{e.Title, strings.Join(e.Tags, "、"),
+			rows = append(rows, []string{num, e.Title, strings.Join(e.Tags, "、"),
 				fmtLimits(e.TimeLimit, e.TimeLimits), e.Version, off})
 		}
-		sel = tgcomp.DataFrame(c, []string{"題目", "標籤", "時間限制", "版本", "可離線"}, rows,
+		if len(rows) == 0 {
+			tgcomp.MessageInfo(c, "沒有符合的題目")
+			return
+		}
+		sel = tgcomp.DataFrame(c, []string{"編號", "題目", "標籤", "時間限制", "版本", "可離線"}, rows,
 			(&tgcomp.DataFrameConf{
 				Base:      tgframe.Base{ID: "problem_list"},
 				PageSize:  100,
 				Selection: tgcomp.SelectionModeSingle,
 				RowKeys:   ids,
-			}).SetSortable(false))
+			}).SetSortable(false).SetSearchable(false))
 	})
 	if len(sel) == 0 {
 		return nil
 	}
 	// Clearing drops the list's pick too, so it comes back unpicked.
 	slot.Clear()
+	side.Clear()
 	p.State.Set(pickedKey, shown[sel[0]].ID)
 	return shown[sel[0]]
+}
+
+// problemNumber returns the leading digits of id ("0001-a-plus-b" → "0001"), or id if none.
+func problemNumber(id string) string {
+	n := 0
+	for n < len(id) && id[n] >= '0' && id[n] <= '9' {
+		n++
+	}
+	if n == 0 {
+		return id
+	}
+	return id[:n]
 }
 
 // allTags returns the tags of es, sorted, without duplicates.
