@@ -1,0 +1,22 @@
+10 20
+16 -15 11 -4 -18 -20 -11 17 10 3
+set 1 -3
+set 4 6
+getmin 2 9
+set 9 -4
+getmin 2 10
+getmin 2 6
+set 7 -4
+set 2 -8
+getmin 2 5
+getmin 4 10
+getmin 6 8
+getmin 4 9
+getmin 1 9
+getmin 4 10
+set 6 17
+set 9 13
+set 10 -3
+set 4 4
+set 3 18
+set 9 -20
