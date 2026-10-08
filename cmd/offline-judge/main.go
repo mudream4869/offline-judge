@@ -109,29 +109,15 @@ const intro = `完全在瀏覽器裡執行的 Python / C++ / JavaScript / Go 解
 - 測資不保密，失敗時會顯示第一筆錯誤的完整輸入與輸出
 - 題目從 GitHub 下載，打開過的題目可離線使用；來源可在「設定」更改`
 
+const about = `**Offline Judge**：完全在瀏覽器裡執行的解題系統，不需要後端。
+
+原始碼：[mudream4869/offline-judge](https://github.com/mudream4869/offline-judge)`
+
 // Index is the home page.
 func Index(p *tgframe.Params) error {
 	tgcomp.Title(p.Main, "Offline Judge")
 	tgcomp.Markdown(p.Main, intro)
 	tgcomp.Link(p.Main, "前往題目列表", "#/problems")
-	return nil
-}
-
-const repoURL = "https://github.com/mudream4869/offline-judge"
-
-const aboutText = `完全在瀏覽器裡執行的解題系統，不需要後端。
-
-使用的專案：
-- [toolgui](https://github.com/voilelab/toolgui)：UI
-- [Pyodide](https://pyodide.org/)：Python
-- [YoWASP clang](https://yowasp.org/)：C++
-- [browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim)：執行 WASI wasm`
-
-// About shows the project info and repo link.
-func About(p *tgframe.Params) error {
-	tgcomp.Title(p.Main, "關於")
-	tgcomp.Markdown(p.Main, aboutText)
-	tgcomp.Link(p.Main, "GitHub："+repoURL, repoURL)
 	return nil
 }
 
@@ -887,11 +873,11 @@ func main() {
 
 	app := tgframe.NewApp()
 	app.SetTitle("Offline Judge")
+	app.SetAbout(about)
 	app.AddPageByConfig(&tgframe.PageConfig{Name: "index", Title: "首頁", Emoji: "🏠"}, Index)
 	app.AddPageByConfig(&tgframe.PageConfig{Name: "problems", Title: "題目列表", Emoji: "📚"}, Problems)
 	app.AddPageByConfig(&tgframe.PageConfig{Name: "submissions", Title: "提交紀錄", Emoji: "📝"}, Submissions)
 	app.AddPageByConfig(&tgframe.PageConfig{Name: "settings", Title: "設定", Emoji: "⚙️"}, Settings)
-	app.AddPageByConfig(&tgframe.PageConfig{Name: "about", Title: "關於", Emoji: "ℹ️"}, About)
 	app.SetHashPageNameMode(true)
 	tgwasm.NewExecutor(app).Run()
 }
