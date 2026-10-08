@@ -184,7 +184,7 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 			shown = append(shown, e)
 			ids = append(ids, e.ID)
 			rows = append(rows, []string{e.Title, strings.Join(e.Tags, "、"),
-				fmtTime(e.TimeLimit), e.Version, off})
+				fmtLimits(e.TimeLimit, e.TimeLimits), e.Version, off})
 		}
 		sel = tgcomp.DataFrame(c, []string{"題目", "標籤", "時間限制", "版本", "可離線"}, rows,
 			(&tgcomp.DataFrameConf{
@@ -766,6 +766,20 @@ func verdictName(v judge.Verdict) string {
 
 func fmtTime(d time.Duration) string {
 	return fmt.Sprintf("%d ms", d.Milliseconds())
+}
+
+// fmtLimits shows limit, then each language that overrides it, e.g. "2000 ms（C++ 500 ms）".
+func fmtLimits(limit time.Duration, byLang map[string]time.Duration) string {
+	var over []string
+	for _, l := range langs {
+		if t, ok := byLang[l.id]; ok {
+			over = append(over, l.name+" "+fmtTime(t))
+		}
+	}
+	if len(over) == 0 {
+		return fmtTime(limit)
+	}
+	return fmtTime(limit) + "（" + strings.Join(over, "、") + "）"
 }
 
 func cut(s string) string {

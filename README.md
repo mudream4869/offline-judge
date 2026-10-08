@@ -123,7 +123,7 @@ go test ./problems -update   # 從每題的 problem.json 重新產生 problems.j
 
 `time_limits_ms` 選填，依語言（`py`、`cpp`、`js`）覆寫 `time_limit_ms`，沒列出的語言用 `time_limit_ms`。
 只在其他語言用錯的複雜度也能過時才需要，例如 `0006-rmq` 的 `{"cpp": 500, "js": 1000}`。
-題目頁顯示目前語言的時限，題目列表顯示 `time_limit_ms`。
+題目頁顯示目前語言的時限，題目列表顯示 `time_limit_ms` 與有覆寫的語言，例如 `2000 ms（C++ 500 ms、JavaScript 1000 ms）`。
 
 `tags` 選填，會顯示在題目列表與題目頁，列表可依標籤篩選（選多個時只列出同時有這些標籤的題目）。
 
