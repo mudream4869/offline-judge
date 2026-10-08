@@ -117,6 +117,24 @@ func Index(p *tgframe.Params) error {
 	return nil
 }
 
+const repoURL = "https://github.com/mudream4869/offline-judge"
+
+const aboutText = `完全在瀏覽器裡執行的解題系統，不需要後端。
+
+使用的專案：
+- [toolgui](https://github.com/voilelab/toolgui)：UI
+- [Pyodide](https://pyodide.org/)：Python
+- [YoWASP clang](https://yowasp.org/)：C++
+- [browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim)：執行 WASI wasm`
+
+// About shows the project info and repo link.
+func About(p *tgframe.Params) error {
+	tgcomp.Title(p.Main, "關於")
+	tgcomp.Markdown(p.Main, aboutText)
+	tgcomp.Link(p.Main, "GitHub："+repoURL, repoURL)
+	return nil
+}
+
 // Problems lists the problems; picking a row opens it.
 func Problems(p *tgframe.Params) error {
 	s := openSet(p.Main, p.Context)
@@ -873,6 +891,7 @@ func main() {
 	app.AddPageByConfig(&tgframe.PageConfig{Name: "problems", Title: "題目列表", Emoji: "📚"}, Problems)
 	app.AddPageByConfig(&tgframe.PageConfig{Name: "submissions", Title: "提交紀錄", Emoji: "📝"}, Submissions)
 	app.AddPageByConfig(&tgframe.PageConfig{Name: "settings", Title: "設定", Emoji: "⚙️"}, Settings)
+	app.AddPageByConfig(&tgframe.PageConfig{Name: "about", Title: "關於", Emoji: "ℹ️"}, About)
 	app.SetHashPageNameMode(true)
 	tgwasm.NewExecutor(app).Run()
 }
