@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 
 	"github.com/voilelab/toolgui/toolgui/tgcomp"
@@ -128,13 +129,13 @@ func showSubmission(p *tgframe.Params, sub *submission) error {
 
 	// Load the problem to show the failed test; it may be gone from the source.
 	var pr *problems.Problem
-	title := sub.Problem
+	title, found := sub.Problem, false
 	if s := openSet(p.Main, p.Context); s != nil {
 		for _, e := range s.Entries() {
 			if e.ID != sub.Problem {
 				continue
 			}
-			title = e.Title
+			title, found = e.Title, true
 			done := func() {}
 			if !e.Cached {
 				done = tgcomp.Spinner(p.Main, "下載題目中…")
@@ -155,6 +156,9 @@ func showSubmission(p *tgframe.Params, sub *submission) error {
 		info += "，題目版本 " + sub.Version
 	}
 	tgcomp.Caption(p.Main, info)
+	if found {
+		tgcomp.PageLink(p.Main, "前往題目", "problems", url.Values{"id": {sub.Problem}})
+	}
 	if pr != nil && outdated(sub, pr.Version) {
 		tgcomp.MessageWarning(p.Main, "題目已更新（目前版本 "+pr.Version+"），下方測資可能與當時不同")
 	}
