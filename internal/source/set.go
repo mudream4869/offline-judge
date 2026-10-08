@@ -36,6 +36,7 @@ type Entry struct {
 	ID        string
 	Title     string
 	TimeLimit time.Duration
+	Version   string
 	Cached    bool // statement and tests are stored, so it works offline
 }
 
@@ -151,7 +152,7 @@ func (s *Set) setIndex(ix *Index) error {
 	var entries []Entry
 	metas := map[string]problems.Meta{}
 	for _, e := range list {
-		entries = append(entries, Entry{ID: e.ID, Title: e.Title, TimeLimit: e.TimeLimit})
+		entries = append(entries, Entry{ID: e.ID, Title: e.Title, TimeLimit: e.TimeLimit, Version: e.Version})
 		metas[e.ID] = e.Meta
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })

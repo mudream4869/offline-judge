@@ -53,7 +53,7 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 | object store | 內容 |
 | --- | --- |
 | `drafts` | key 為 `code_<語言>_<題目>`、`stdin_<語言>_<題目>`、`lang`，值為字串；沒改過的不存，預設值改了會跟著變 |
-| `submissions` | 每次提交一筆：題目、語言、程式碼、時間、結果；只留第一筆失敗的輸出且截斷，以 `problem` 為索引 |
+| `submissions` | 每次提交一筆：題目、題目版本、語言、程式碼、時間、結果；只留第一筆失敗的輸出且截斷，以 `problem` 為索引 |
 | `indexes` | key 為來源網址，值為該來源某個 commit 的檔案列表（JSON） |
 | `blobs` | key 為 git blob sha，值為檔案內容；不同來源、不同 commit 的相同檔案共用 |
 
@@ -105,7 +105,7 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 
 ```
 problems/0004-xxx/
-  problem.json    {"title": "...", "time_limit_ms": 1000}
+  problem.json    {"title": "...", "time_limit_ms": 1000, "version": "2026-10-08 15:04:05"}
   statement.md    題目敘述（Markdown，`$...$` / `$$...$$` 為 LaTeX 公式）；「## 提示」段落會收合顯示
   tests/
     sample1.in / sample1.out   sample 開頭的會顯示在題目裡
@@ -116,10 +116,13 @@ problems/0004-xxx/
 go test ./problems -update   # 從每題的 problem.json 重新產生 problems.json
 ```
 
-`problems.json` 沒更新的話 `go test` 會失敗。其他來源也要在資料夾根目錄放 `problems.json`：
+`version` 是題目最後修改的時間（`YYYY-MM-DD hh:mm:ss`），改了敘述、測資或時間限制就要更新；
+提交紀錄會記下評測時的版本，版本不同時標示「舊版」。
+
+`problems.json` 沒更新、或 `version` 格式不對的話 `go test` 會失敗。其他來源也要在資料夾根目錄放 `problems.json`：
 
 ```json
-[{"id": "0001-a-plus-b", "title": "A + B", "time_limit_ms": 1000}]
+[{"id": "0001-a-plus-b", "title": "A + B", "time_limit_ms": 1000, "version": "2026-10-06 21:30:00"}]
 ```
 
 推到來源的分支後，使用者下次開啟時就會拿到，不用重新 build。

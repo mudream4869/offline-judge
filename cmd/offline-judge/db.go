@@ -23,7 +23,7 @@ const (
 	dbName     = "offline-judge"
 	dbVersion  = 2
 	draftStore = "drafts"      // key → text
-	subStore   = "submissions" // {id, problem, lang, code, at, report}
+	subStore   = "submissions" // {id, problem, version, lang, code, at, report}
 	indexStore = "indexes"     // source URL → source.Index as JSON
 	blobStore  = "blobs"       // git blob sha → Uint8Array
 )
@@ -167,6 +167,7 @@ func saveDraft(key, text string) {
 type submission struct {
 	ID      int
 	Problem string
+	Version string // problem version judged against; "" for older submissions
 	Lang    string // lang.id
 	Code    string
 	At      time.Time
@@ -182,6 +183,7 @@ func saveSubmission(s *submission) error {
 	v, err := request(subStore, "readwrite", func(st js.Value) js.Value {
 		return st.Call("add", map[string]any{
 			"problem": s.Problem,
+			"version": s.Version,
 			"lang":    s.Lang,
 			"code":    s.Code,
 			"at":      float64(s.At.UnixMilli()),
@@ -266,6 +268,9 @@ func decodeSubmission(v js.Value) (*submission, error) {
 		Lang:    v.Get("lang").String(),
 		Code:    v.Get("code").String(),
 		At:      time.UnixMilli(int64(v.Get("at").Float())),
+	}
+	if ver := v.Get("version"); ver.Type() == js.TypeString {
+		s.Version = ver.String()
 	}
 	if err := json.Unmarshal([]byte(v.Get("report").String()), &s.Report); err != nil {
 		return nil, err

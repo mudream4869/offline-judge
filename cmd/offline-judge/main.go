@@ -154,14 +154,14 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 			off = "✓"
 		}
 		ids[i] = e.ID
-		rows[i] = []string{e.Title, fmtTime(e.TimeLimit), off}
+		rows[i] = []string{e.Title, fmtTime(e.TimeLimit), e.Version, off}
 	}
 	slot := tgcomp.Empty(p.Main)
 	var sel []int
 	slot.With(func(c *tgframe.Container) {
 		tgcomp.Title(c, "題目列表")
 		tgcomp.Caption(c, "點一題開始作答")
-		sel = tgcomp.DataFrame(c, []string{"題目", "時間限制", "可離線"}, rows,
+		sel = tgcomp.DataFrame(c, []string{"題目", "時間限制", "版本", "可離線"}, rows,
 			(&tgcomp.DataFrameConf{
 				Base:      tgframe.Base{ID: "problem_list"},
 				PageSize:  100,
@@ -319,7 +319,11 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	}
 
 	tgcomp.Markdown(p.Main, pr.Statement)
-	tgcomp.Caption(p.Main, fmt.Sprintf("時間限制：%d ms", pr.TimeLimit.Milliseconds()))
+	info := fmt.Sprintf("時間限制：%d ms", pr.TimeLimit.Milliseconds())
+	if pr.Version != "" {
+		info += "，版本：" + pr.Version
+	}
+	tgcomp.Caption(p.Main, info)
 
 	for i, c := range pr.Samples() {
 		tgcomp.Subtitle(p.Main, fmt.Sprintf("範例 %d", i+1))
@@ -380,6 +384,7 @@ func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 		st.Complete("評測完成")
 		memo.addSubmission(&submission{
 			Problem: pr.ID,
+			Version: pr.Version,
 			Lang:    lg.id,
 			Code:    code,
 			At:      time.Now(),
@@ -410,6 +415,9 @@ func historyPanel(c *tgframe.Container, pr *problems.Problem) {
 			lg.name, s.Report.Verdict)
 		if s.Report.Verdict != judge.CE {
 			title += "  " + fmtTime(maxTime(&s.Report))
+		}
+		if outdated(s, pr.Version) {
+			title += "  （舊版題目）"
 		}
 		id := fmt.Sprintf("sub_%d", s.ID)
 		box := tgcomp.Expand(c, title, false, &tgcomp.ExpandConf{ID: id})

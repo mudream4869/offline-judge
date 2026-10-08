@@ -69,7 +69,7 @@ func submissionList(p *tgframe.Params, subs []*submission) *submission {
 		}
 		tgcomp.Caption(c, fmt.Sprintf("共 %d 筆，存在這個瀏覽器裡；點一筆查看程式碼與結果", len(subs)))
 
-		titles := problemTitles(p, c)
+		cur := currentEntries(p, c)
 		ids := make([]string, len(subs))
 		rows := make([][]string, len(subs))
 		for i, s := range subs {
@@ -77,15 +77,18 @@ func submissionList(p *tgframe.Params, subs []*submission) *submission {
 			if s.Report.Verdict != judge.CE {
 				t = fmtTime(maxTime(&s.Report))
 			}
-			title := s.Problem
-			if v, ok := titles[s.Problem]; ok {
-				title = v
+			title, ver := s.Problem, s.Version
+			if e, ok := cur[s.Problem]; ok {
+				title = e.Title
+				if outdated(s, e.Version) {
+					ver += "（舊版）"
+				}
 			}
 			ids[i] = strconv.Itoa(s.ID)
-			rows[i] = []string{"#" + ids[i], s.At.Format("2006-01-02 15:04:05"), title,
+			rows[i] = []string{"#" + ids[i], s.At.Format("2006-01-02 15:04:05"), title, ver,
 				langByID(s.Lang).name, string(s.Report.Verdict), t}
 		}
-		sel = tgcomp.DataFrame(c, []string{"編號", "時間", "題目", "語言", "結果", "最長耗時"}, rows,
+		sel = tgcomp.DataFrame(c, []string{"編號", "時間", "題目", "版本", "語言", "結果", "最長耗時"}, rows,
 			(&tgcomp.DataFrameConf{
 				Base:      tgframe.Base{ID: "submission_list"},
 				PageSize:  50,
@@ -102,10 +105,10 @@ func submissionList(p *tgframe.Params, subs []*submission) *submission {
 	return subs[sel[0]]
 }
 
-// problemTitles maps problem IDs to titles of the current source; empty if
+// currentEntries maps problem IDs to entries of the current source; empty if
 // it can't be loaded.
-func problemTitles(p *tgframe.Params, c *tgframe.Container) map[string]string {
-	out := map[string]string{}
+func currentEntries(p *tgframe.Params, c *tgframe.Container) map[string]source.Entry {
+	out := map[string]source.Entry{}
 	slot := tgcomp.Empty(c)
 	var s *source.Set
 	slot.With(func(c *tgframe.Container) { s = openSet(c, p.Context) })
@@ -115,7 +118,7 @@ func problemTitles(p *tgframe.Params, c *tgframe.Container) map[string]string {
 		return out
 	}
 	for _, e := range s.Entries() {
-		out[e.ID] = e.Title
+		out[e.ID] = e
 	}
 	return out
 }
@@ -147,9 +150,22 @@ func showSubmission(p *tgframe.Params, sub *submission) error {
 
 	lg := langByID(sub.Lang)
 	tgcomp.Subtitle(p.Main, fmt.Sprintf("#%d  %s", sub.ID, title))
-	tgcomp.Caption(p.Main, fmt.Sprintf("%s，%s", sub.At.Format("2006-01-02 15:04:05"), lg.name))
+	info := fmt.Sprintf("%s，%s", sub.At.Format("2006-01-02 15:04:05"), lg.name)
+	if sub.Version != "" {
+		info += "，題目版本 " + sub.Version
+	}
+	tgcomp.Caption(p.Main, info)
+	if pr != nil && outdated(sub, pr.Version) {
+		tgcomp.MessageWarning(p.Main, "題目已更新（目前版本 "+pr.Version+"），下方測資可能與當時不同")
+	}
 	tgcomp.Code(p.Main, sub.Code, &tgcomp.CodeConf{Language: lg.hl})
 	showReport(p.Main, pr, &sub.Report, fmt.Sprintf("subpage_%d", sub.ID))
 	tgcomp.Button(p.Main, delLabel, delConf(sub.ID))
 	return nil
+}
+
+// outdated reports whether s was judged against another version of its
+// problem; unknown for submissions made before versions.
+func outdated(s *submission, cur string) bool {
+	return s.Version != "" && s.Version != cur
 }
