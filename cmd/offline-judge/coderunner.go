@@ -10,14 +10,15 @@ import (
 	"github.com/mudream4869/offline-judge/internal/judge"
 )
 
-// PyRunner implements judge.Runner with Pyodide workers.
-type PyRunner struct{ *pool }
+// CodeRunner implements judge.Runner with workers that take source code
+// directly (pyworker.mjs, jsrun.mjs).
+type CodeRunner struct{ *pool }
 
-func NewPyRunner(url string) *PyRunner {
-	return &PyRunner{newPool(url, "Python")}
+func NewCodeRunner(url, name string) *CodeRunner {
+	return &CodeRunner{newPool(url, name)}
 }
 
-func (r *PyRunner) Run(ctx context.Context, code, stdin string,
+func (r *CodeRunner) Run(ctx context.Context, code, stdin string,
 	limit time.Duration) (judge.RunResult, error) {
 
 	msg := js.Global().Get("Object").New()
