@@ -3,7 +3,7 @@
 // Each problem is a directory:
 //
 //	problems.json       every problem.json in one list, made by MakeList
-//	<id>/problem.json   {"title": "...", "time_limit_ms": 1000}
+//	<id>/problem.json   {"title": "...", "time_limit_ms": 1000, "version": "2026-10-08 15:04:05"}
 //	<id>/statement.md   a "## 提示" section becomes Hint
 //	<id>/tests/<name>.in, <name>.out   names starting with "sample" are shown
 package problems
@@ -27,6 +27,7 @@ type Problem struct {
 	Statement string
 	Hint      string // markdown, shown collapsed; empty if none
 	TimeLimit time.Duration
+	Version   string // date of the last change, e.g. "2026-10-08 15:04:05"; may be empty
 	Cases     []judge.Case
 }
 
@@ -45,11 +46,13 @@ func (p *Problem) Samples() []judge.Case {
 type Meta struct {
 	Title     string
 	TimeLimit time.Duration
+	Version   string
 }
 
 type meta struct {
 	Title       string `json:"title"`
 	TimeLimitMS int    `json:"time_limit_ms"`
+	Version     string `json:"version,omitempty"`
 }
 
 // ParseMeta parses problem.json.
@@ -68,6 +71,7 @@ func (m meta) parse() Meta {
 	return Meta{
 		Title:     m.Title,
 		TimeLimit: time.Duration(m.TimeLimitMS) * time.Millisecond,
+		Version:   m.Version,
 	}
 }
 
@@ -188,6 +192,7 @@ func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 		Statement: stmt,
 		Hint:      hint,
 		TimeLimit: m.TimeLimit,
+		Version:   m.Version,
 		Cases:     cases,
 	}, nil
 }
