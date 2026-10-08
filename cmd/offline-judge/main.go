@@ -111,7 +111,7 @@ const intro = `完全在瀏覽器裡執行的 Python / C++ / JavaScript / Go 解
 
 // Index is the home page.
 func Index(p *tgframe.Params) error {
-	tgcomp.Title(p.Main, "Offline Judge")
+	tgcomp.Image(p.Main, "assets/banner.webp", &tgcomp.ImageConf{Width: "100%"})
 	tgcomp.Markdown(p.Main, intro)
 	tgcomp.Link(p.Main, "前往題目列表", "#/problems")
 	return nil
