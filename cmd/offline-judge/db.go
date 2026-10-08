@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"sync"
 	"syscall/js"
 	"time"
@@ -203,14 +204,26 @@ func deleteSubmission(id int) {
 
 // loadSubmissions returns up to n submissions of a problem, newest first.
 func loadSubmissions(problem string, n int) ([]*submission, error) {
+	return scanSubmissions(n, func(st js.Value) js.Value {
+		only := js.Global().Get("IDBKeyRange").Call("only", problem)
+		return st.Call("index", "problem").Call("openCursor", only, "prev")
+	})
+}
+
+// loadAllSubmissions returns every submission, newest first.
+func loadAllSubmissions() ([]*submission, error) {
+	return scanSubmissions(math.MaxInt, func(st js.Value) js.Value {
+		return st.Call("openCursor", nil, "prev")
+	})
+}
+
+// scanSubmissions reads up to n rows from the cursor that open makes.
+func scanSubmissions(n int, open func(st js.Value) js.Value) ([]*submission, error) {
 	st, err := objStore(subStore, "readonly")
 	if err != nil {
 		return nil, err
 	}
-	req, err := jsTry(func() js.Value {
-		only := js.Global().Get("IDBKeyRange").Call("only", problem)
-		return st.Call("index", "problem").Call("openCursor", only, "prev")
-	})
+	req, err := jsTry(func() js.Value { return open(st) })
 	if err != nil {
 		return nil, err
 	}

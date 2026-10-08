@@ -1,0 +1,155 @@
+//go:build js && wasm
+
+package main
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/voilelab/toolgui/toolgui/tgcomp"
+	"github.com/voilelab/toolgui/toolgui/tgframe"
+
+	"github.com/mudream4869/offline-judge/internal/judge"
+	"github.com/mudream4869/offline-judge/internal/source"
+	"github.com/mudream4869/offline-judge/problems"
+)
+
+const (
+	pickedSubKey = "picked_submission"
+	subBackLabel = "← 返回提交紀錄"
+)
+
+var subBackConf = &tgcomp.ButtonConf{ID: "submission_back"}
+
+// Submissions lists the submissions of every problem; picking a row opens it.
+func Submissions(p *tgframe.Params) error {
+	// Before the list, so a cleared pick takes effect this run.
+	if tgcomp.ButtonClicked(p.Main, subBackLabel, subBackConf) {
+		p.State.Delete(pickedSubKey)
+	}
+	if sub := pickedSubmission(p); sub != nil && tgcomp.ButtonClicked(p.Main, delLabel, delConf(sub.ID)) {
+		memo.deleteSubmission(sub.Problem, sub.ID)
+		p.State.Delete(pickedSubKey)
+	}
+
+	subs := memo.allSubmissions()
+	sub := pickedSubmission(p)
+	if sub == nil {
+		sub = submissionList(p, subs)
+	}
+	if sub == nil {
+		return nil
+	}
+	return showSubmission(p, sub)
+}
+
+// pickedSubmission returns the picked submission, if it still exists.
+func pickedSubmission(p *tgframe.Params) *submission {
+	id, ok := p.State.GetNumber[int](pickedSubKey)
+	if !ok {
+		return nil
+	}
+	for _, s := range memo.allSubmissions() {
+		if s.ID == id {
+			return s
+		}
+	}
+	return nil
+}
+
+// submissionList returns the picked submission, or draws the list if there is none.
+func submissionList(p *tgframe.Params, subs []*submission) *submission {
+	slot := tgcomp.Empty(p.Main)
+	var sel []int
+	slot.With(func(c *tgframe.Container) {
+		tgcomp.Title(c, "提交紀錄")
+		if len(subs) == 0 {
+			tgcomp.Caption(c, "還沒有提交紀錄")
+			return
+		}
+		tgcomp.Caption(c, fmt.Sprintf("共 %d 筆，存在這個瀏覽器裡；點一筆查看程式碼與結果", len(subs)))
+
+		titles := problemTitles(p, c)
+		ids := make([]string, len(subs))
+		rows := make([][]string, len(subs))
+		for i, s := range subs {
+			t := "-"
+			if s.Report.Verdict != judge.CE {
+				t = fmtTime(maxTime(&s.Report))
+			}
+			title := s.Problem
+			if v, ok := titles[s.Problem]; ok {
+				title = v
+			}
+			ids[i] = strconv.Itoa(s.ID)
+			rows[i] = []string{"#" + ids[i], s.At.Format("2006-01-02 15:04:05"), title,
+				langByID(s.Lang).name, string(s.Report.Verdict), t}
+		}
+		sel = tgcomp.DataFrame(c, []string{"編號", "時間", "題目", "語言", "結果", "最長耗時"}, rows,
+			(&tgcomp.DataFrameConf{
+				Base:      tgframe.Base{ID: "submission_list"},
+				PageSize:  50,
+				Selection: tgcomp.SelectionModeSingle,
+				RowKeys:   ids,
+			}).SetSortable(false))
+	})
+	if len(sel) == 0 {
+		return nil
+	}
+	// Clearing drops the list's pick too, so it comes back unpicked.
+	slot.Clear()
+	p.State.Set(pickedSubKey, subs[sel[0]].ID)
+	return subs[sel[0]]
+}
+
+// problemTitles maps problem IDs to titles of the current source; empty if
+// it can't be loaded.
+func problemTitles(p *tgframe.Params, c *tgframe.Container) map[string]string {
+	out := map[string]string{}
+	slot := tgcomp.Empty(c)
+	var s *source.Set
+	slot.With(func(c *tgframe.Container) { s = openSet(c, p.Context) })
+	if s == nil {
+		// The problem page shows why; here IDs will do.
+		slot.Clear()
+		return out
+	}
+	for _, e := range s.Entries() {
+		out[e.ID] = e.Title
+	}
+	return out
+}
+
+func showSubmission(p *tgframe.Params, sub *submission) error {
+	tgcomp.Button(p.Main, subBackLabel, subBackConf)
+
+	// Load the problem to show the failed test; it may be gone from the source.
+	var pr *problems.Problem
+	title := sub.Problem
+	if s := openSet(p.Main, p.Context); s != nil {
+		for _, e := range s.Entries() {
+			if e.ID != sub.Problem {
+				continue
+			}
+			title = e.Title
+			done := func() {}
+			if !e.Cached {
+				done = tgcomp.Spinner(p.Main, "下載題目中…")
+			}
+			var err error
+			pr, err = s.Problem(p.Context, e.ID)
+			done()
+			if err != nil {
+				tgcomp.MessageWarning(p.Main, "無法載入題目："+err.Error())
+			}
+		}
+	}
+
+	lg := langByID(sub.Lang)
+	tgcomp.Subtitle(p.Main, fmt.Sprintf("#%d  %s", sub.ID, title))
+	tgcomp.Caption(p.Main, fmt.Sprintf("%s，%s", sub.At.Format("2006-01-02 15:04:05"), lg.name))
+	tgcomp.Code(p.Main, sub.Code, &tgcomp.CodeConf{Language: lg.hl})
+	showReport(p.Main, pr, &sub.Report, fmt.Sprintf("subpage_%d", sub.ID))
+	tgcomp.Button(p.Main, delLabel, delConf(sub.ID))
+	return nil
+}

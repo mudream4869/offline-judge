@@ -465,6 +465,10 @@ func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report, i
 		if cr.Verdict == judge.AC {
 			continue
 		}
+		// The tests may have changed since, or the problem isn't loaded.
+		if pr == nil || i >= len(pr.Cases) || pr.Cases[i].Name != cr.Name {
+			break
+		}
 		tc := pr.Cases[i]
 		box := tgcomp.Expand(c, "第一筆失敗："+cr.Name, true,
 			&tgcomp.ExpandConf{ID: "fail_" + id})
@@ -536,6 +540,7 @@ type store struct {
 	mu   sync.Mutex
 	text map[string]string
 	subs map[string][]*submission // by problem, newest first
+	all  []*submission            // every problem, newest first; nil until loaded
 }
 
 func (s *store) getLang() int {
@@ -594,6 +599,22 @@ func (s *store) loadSubs(problem string) []*submission {
 	return subs
 }
 
+// allSubmissions returns the submissions of every problem, newest first.
+func (s *store) allSubmissions() []*submission {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.loadAll()
+}
+
+func (s *store) loadAll() []*submission {
+	if s.all == nil {
+		all, err := loadAllSubmissions()
+		logDBErr("讀取", err)
+		s.all = append([]*submission{}, all...) // non-nil: loaded
+	}
+	return s.all
+}
+
 func (s *store) addSubmission(sub *submission) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -602,8 +623,8 @@ func (s *store) addSubmission(sub *submission) {
 		logDBErr("寫入", err)
 		// Unsaved: number it after the newest so it still shows.
 		sub.ID = 1
-		if len(subs) > 0 {
-			sub.ID = subs[0].ID + 1
+		if all := s.loadAll(); len(all) > 0 {
+			sub.ID = all[0].ID + 1
 		}
 	}
 	subs = append([]*submission{sub}, subs...)
@@ -611,6 +632,9 @@ func (s *store) addSubmission(sub *submission) {
 		subs = subs[:historyLimit]
 	}
 	s.subs[sub.Problem] = subs
+	if s.all != nil {
+		s.all = append([]*submission{sub}, s.all...)
+	}
 }
 
 func (s *store) deleteSubmission(problem string, id int) {
@@ -621,6 +645,12 @@ func (s *store) deleteSubmission(problem string, id int) {
 	for i, sub := range subs {
 		if sub.ID == id {
 			s.subs[problem] = append(subs[:i:i], subs[i+1:]...)
+			break
+		}
+	}
+	for i, sub := range s.all {
+		if sub.ID == id {
+			s.all = append(s.all[:i:i], s.all[i+1:]...)
 			break
 		}
 	}
@@ -675,6 +705,7 @@ func main() {
 	app.SetTitle("Offline Judge")
 	app.AddPageByConfig(&tgframe.PageConfig{Name: "index", Title: "首頁", Emoji: "🏠"}, Index)
 	app.AddPageByConfig(&tgframe.PageConfig{Name: "problems", Title: "題目列表", Emoji: "📚"}, Problems)
+	app.AddPageByConfig(&tgframe.PageConfig{Name: "submissions", Title: "提交紀錄", Emoji: "📝"}, Submissions)
 	app.AddPageByConfig(&tgframe.PageConfig{Name: "settings", Title: "設定", Emoji: "⚙️"}, Settings)
 	app.SetHashPageNameMode(true)
 	tgwasm.NewExecutor(app).Run()
