@@ -2,8 +2,12 @@ package problems
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +45,50 @@ func TestAll(t *testing.T) {
 			if !judge.Equal(c.Output, c.Output) {
 				t.Errorf("%s/%s: output does not match itself", p.ID, c.Name)
 			}
+		}
+	}
+}
+
+// checkerHarness prints the cases (JSON on stdin) whose answer the
+// checker (argv[2]) doesn't accept.
+const checkerHarness = `
+import { readFileSync } from 'node:fs'
+import { pathToFileURL } from 'node:url'
+const check = (await import(pathToFileURL(process.argv[2]))).default
+for (const c of JSON.parse(readFileSync(0, 'utf8'))) {
+  const r = await check(c.Input, c.Output, c.Output)
+  if (r !== true) console.log(c.Name + ': ' + r)
+}
+`
+
+// TestCheckers checks every checker accepts the expected outputs.
+func TestCheckers(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not found")
+	}
+	ps, err := Load(os.DirFS("."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := filepath.Join(t.TempDir(), "harness.mjs")
+	if err := os.WriteFile(harness, []byte(checkerHarness), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range ps {
+		if p.Checker == "" {
+			continue
+		}
+		in, err := json.Marshal(p.Cases)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(node, harness, filepath.Join(p.ID, CheckerFile))
+		cmd.Stdin = bytes.NewReader(in)
+		out, err := cmd.CombinedOutput()
+		if err != nil || len(out) > 0 {
+			t.Errorf("%s: checker rejects expected outputs: %v\n%s", p.ID, err,
+				strings.TrimSpace(string(out)))
 		}
 	}
 }

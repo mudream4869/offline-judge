@@ -5,11 +5,13 @@
 //	problems.json       every problem.json in one list, made by MakeList
 //	<id>/problem.json   {"title": "...", "time_limit_ms": 1000, "version": "2026-10-08 15:04:05"}
 //	<id>/statement.md   a "## 提示" section becomes Hint
+//	<id>/checker.js     optional; judges outputs instead of an exact match
 //	<id>/tests/<name>.in, <name>.out   names starting with "sample" are shown
 package problems
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
@@ -29,6 +31,7 @@ type Problem struct {
 	TimeLimit time.Duration
 	Version   string // date of the last change, e.g. "2026-10-08 15:04:05"; may be empty
 	Cases     []judge.Case
+	Checker   string // checker.js source; empty for an exact match
 }
 
 // Samples returns the cases shown in the statement.
@@ -185,6 +188,11 @@ func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 		return nil, err
 	}
 
+	checker, err := fs.ReadFile(fsys, path.Join(id, CheckerFile))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+
 	stmt, hint := splitHint(string(st))
 	return &Problem{
 		ID:        id,
@@ -194,8 +202,12 @@ func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 		TimeLimit: m.TimeLimit,
 		Version:   m.Version,
 		Cases:     cases,
+		Checker:   string(checker),
 	}, nil
 }
+
+// CheckerFile is the optional checker of a problem.
+const CheckerFile = "checker.js"
 
 const hintHeading = "## 提示"
 

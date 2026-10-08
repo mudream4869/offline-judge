@@ -46,6 +46,10 @@ type Runner interface {
 	Run(ctx context.Context, code, stdin string, limit time.Duration) (RunResult, error)
 }
 
+// Checker decides whether output answers c. msg explains a rejection.
+// An error means the checker itself failed.
+type Checker func(ctx context.Context, c Case, output string) (ok bool, msg string, err error)
+
 // Case is one test case.
 type Case struct {
 	Name   string
@@ -60,6 +64,7 @@ type CaseResult struct {
 	Time    time.Duration
 	Stdout  string
 	Stderr  string
+	Message string `json:",omitempty"` // from the checker
 }
 
 // Report is the result of judging a submission.
@@ -72,9 +77,16 @@ type Report struct {
 
 // Judge runs code on each case, stopping after the first TLE or a CE.
 // The overall verdict is the first non-AC one.
+// check compares outputs; nil means Equal.
 // progress, if not nil, is called after each case.
 func Judge(ctx context.Context, r Runner, code string, cases []Case,
-	limit time.Duration, progress func(done int, cr CaseResult)) (Report, error) {
+	limit time.Duration, check Checker, progress func(done int, cr CaseResult)) (Report, error) {
+
+	if check == nil {
+		check = func(_ context.Context, c Case, out string) (bool, string, error) {
+			return Equal(out, c.Output), "", nil
+		}
+	}
 
 	rep := Report{Verdict: AC}
 	for i, c := range cases {
@@ -97,10 +109,15 @@ func Judge(ctx context.Context, r Runner, code string, cases []Case,
 			cr.Verdict = TLE
 		case res.Status == RunError:
 			cr.Verdict = RE
-		case Equal(res.Stdout, c.Output):
-			cr.Verdict = AC
 		default:
-			cr.Verdict = WA
+			ok, msg, err := check(ctx, c, res.Stdout)
+			if err != nil {
+				return rep, err
+			}
+			cr.Verdict, cr.Message = WA, msg
+			if ok {
+				cr.Verdict = AC
+			}
 		}
 
 		if rep.Verdict == AC && cr.Verdict != AC {
