@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/voilelab/toolgui/toolgui/tgcomp"
 	"github.com/voilelab/toolgui/toolgui/tgframe"
@@ -16,6 +17,7 @@ import (
 
 const (
 	pickedSubKey = "picked_submission"
+	subQueryKey  = "submission_query"
 	subBackLabel = "← 返回提交紀錄"
 )
 
@@ -59,6 +61,23 @@ func pickedSubmission(p *tgframe.Params) *submission {
 
 // submissionList returns the picked submission, or draws the list if there is none.
 func submissionList(p *tgframe.Params, subs []*submission) *submission {
+	// Search sits in the sidebar and is cleared with the list once a row is
+	// picked; the query is kept apart so it comes back with the list.
+	side := tgcomp.Empty(p.Sidebar)
+	var q string
+	if len(subs) > 0 {
+		saved, _ := p.State.Get[string](subQueryKey)
+		side.With(func(c *tgframe.Container) {
+			q = tgcomp.Textbox(c, "搜尋提交紀錄", &tgcomp.TextboxConf{
+				Base:        tgframe.Base{ID: "submission_search"},
+				Placeholder: "編號、題目、語言、結果…",
+				Default:     saved,
+			})
+		})
+		p.State.Set(subQueryKey, q)
+	}
+	q = strings.ToLower(strings.TrimSpace(q))
+
 	slot := tgcomp.Empty(p.Main)
 	var sel []int
 	slot.With(func(c *tgframe.Container) {
@@ -70,9 +89,10 @@ func submissionList(p *tgframe.Params, subs []*submission) *submission {
 		tgcomp.Caption(c, fmt.Sprintf("共 %d 筆，存在這個瀏覽器裡；點一筆查看程式碼與結果", len(subs)))
 
 		cur := currentEntries(p, c)
-		ids := make([]string, len(subs))
-		rows := make([][]string, len(subs))
-		for i, s := range subs {
+		var shown []*submission
+		var ids []string
+		var rows [][]string
+		for _, s := range subs {
 			t := "-"
 			if s.Report.Verdict != judge.CE {
 				t = fmtTime(maxTime(&s.Report))
@@ -84,9 +104,20 @@ func submissionList(p *tgframe.Params, subs []*submission) *submission {
 					ver += "（舊版）"
 				}
 			}
-			ids[i] = strconv.Itoa(s.ID)
-			rows[i] = []string{"#" + ids[i], s.At.Format("2006-01-02 15:04:05"), title, ver,
+			id := strconv.Itoa(s.ID)
+			row := []string{"#" + id, s.At.Format("2006-01-02 15:04:05"), title, ver,
 				langByID(s.Lang).name, string(s.Report.Verdict), t}
+			if q != "" && !strings.Contains(strings.ToLower(strings.Join(row, "\x00")+"\x00"+s.Problem), q) {
+				continue
+			}
+			shown = append(shown, s)
+			ids = append(ids, id)
+			rows = append(rows, row)
+		}
+		subs = shown
+		if len(rows) == 0 {
+			tgcomp.Caption(c, "沒有符合搜尋的提交紀錄")
+			return
 		}
 		sel = tgcomp.DataFrame(c, []string{"編號", "時間", "題目", "版本", "語言", "結果", "最長耗時"}, rows,
 			(&tgcomp.DataFrameConf{
@@ -94,13 +125,14 @@ func submissionList(p *tgframe.Params, subs []*submission) *submission {
 				PageSize:  50,
 				Selection: tgcomp.SelectionModeSingle,
 				RowKeys:   ids,
-			}).SetSortable(false))
+			}).SetSortable(false).SetSearchable(false))
 	})
 	if len(sel) == 0 {
 		return nil
 	}
 	// Clearing drops the list's pick too, so it comes back unpicked.
 	slot.Clear()
+	side.Clear()
 	p.State.Set(pickedSubKey, subs[sel[0]].ID)
 	return subs[sel[0]]
 }
