@@ -65,7 +65,11 @@
     "id": "0007-mod-inverse",
     "title": "模反元素",
     "time_limit_ms": 2000,
-    "version": "2026-10-08 23:29:55",
+    "time_limits_ms": {
+      "cpp": 500,
+      "js": 1000
+    },
+    "version": "2026-10-09 00:00:22",
     "tags": [
       "數論",
       "快速冪",
@@ -76,7 +80,10 @@
     "id": "0008-binomial",
     "title": "組合數",
     "time_limit_ms": 2000,
-    "version": "2026-10-08 23:32:13",
+    "time_limits_ms": {
+      "cpp": 500
+    },
+    "version": "2026-10-09 00:00:22",
     "tags": [
       "數論",
       "組合數學",
