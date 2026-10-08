@@ -106,7 +106,7 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 ```
 problems/0004-xxx/
   problem.json    {"title": "...", "time_limit_ms": 1000, "version": "2026-10-08 15:04:05"}
-  statement.md    題目敘述（Markdown，不支援 LaTeX）；「## 提示」段落會收合顯示
+  statement.md    題目敘述（Markdown，`$...$` / `$$...$$` 為 LaTeX 公式）；「## 提示」段落會收合顯示
   tests/
     sample1.in / sample1.out   sample 開頭的會顯示在題目裡
     01.in / 01.out
