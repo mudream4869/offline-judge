@@ -1,5 +1,5 @@
-// Runs a compiled WASI module. Cheap to start, so the Go side kills it on
-// timeout and uses a spare.
+// Runs a compiled WASI module (C++, Go). Cheap to start, so the Go side
+// kills it on timeout and uses a spare.
 //
 // in:  {id, module, stdin}
 // out: {type: "ready"}
@@ -22,7 +22,7 @@ function collector() {
 self.onmessage = async ({ data: { id, module, stdin } }) => {
   const out = collector()
   const err = collector()
-  const wasi = new WASI(['main'], [], [new OpenFile(new File(enc.encode(stdin))), out, err])
+  const wasi = new WASI(['main'], [], [new OpenFile(new File(enc.encode(stdin))), out, err], { debug: false })
   let status = 'ok'
   let t0 = performance.now()
   try {

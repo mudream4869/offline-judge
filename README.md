@@ -1,12 +1,14 @@
 # Offline Judge
 
-完全在瀏覽器裡執行的 Python / C++ / JavaScript 解題系統，不需要後端。
+完全在瀏覽器裡執行的 Python / C++ / JavaScript / Go 解題系統，不需要後端。
 
 - UI、題目、評測邏輯：Go，用 [toolgui](https://github.com/voilelab/toolgui) 編成 wasm
 - 執行 Python：[Pyodide](https://pyodide.org/)，跑在獨立的 module worker，超時直接 `terminate()`，並預先暖機一個備用 worker
 - 執行 C++（PoC）：[YoWASP clang](https://yowasp.org/) 編成 WASI wasm，再用
   [browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim) 在可砍掉的 worker 裡執行
 - 執行 JavaScript：直接用瀏覽器的 JS 引擎，在 worker 裡模擬 Node 的 stdin / stdout（見下方「JavaScript 的限制」）
+- 執行 Go：Go 本身的 `cmd/compile`、`cmd/link` 編成 WASI wasm，在瀏覽器裡把程式編成 `GOOS=wasip1` 的 wasm，
+  再跟 C++ 一樣執行（見下方「Go 的限制」）
 - 測資不保密，題目從 GitHub 下載（見下方「題目來源」）
 - 頁面：首頁、題目列表（`#/problems`，可依標籤篩選，點表格裡的題目進入，「返回題目列表」回到列表）、
   提交紀錄（`#/submissions`，所有題目的提交，點一筆看程式碼與結果）、設定（`#/settings`）
@@ -18,7 +20,8 @@
 page ── toolgui worker (Go wasm：UI / 題目 / 比對)
             ├── pyworker.mjs   (Pyodide：收 code + stdin，回 stdout / stderr / 耗時)
             ├── cppcompile.mjs (clang：收 code，回 WebAssembly.Module 或編譯錯誤；常駐)
-            ├── cpprun.mjs     (收 module + stdin，回 stdout / stderr / 耗時)
+            ├── gocompile.mjs  (Go compile + link：收 code，回 WebAssembly.Module 或編譯錯誤；常駐)
+            ├── wasirun.mjs    (C++、Go 共用：收 module + stdin，回 stdout / stderr / 耗時)
             ├── jsrun.mjs      (收 code + stdin，回 stdout / stderr / 耗時；每次執行換新的 worker)
             └── checker.mjs    (跑題目的 checker.js，回 AC / WA 與訊息)
 ```
@@ -26,12 +29,12 @@ page ── toolgui worker (Go wasm：UI / 題目 / 比對)
 執行用的 worker 介面為：
 
 ```
-in:  {id, code, stdin}          （cpprun.mjs 是 {id, module, stdin}）
+in:  {id, code, stdin}          （wasirun.mjs 是 {id, module, stdin}）
 out: {type: "ready"} | {type: "error", error}
      {type: "result", id, status: "ok"|"re", stdout, stderr, ms, fatal}
 ```
 
-C++ 的編譯與執行分開：載入 clang 很慢，所以編譯 worker 常駐；執行 worker 很便宜，
+C++ 與 Go 的編譯與執行分開：載入編譯器很慢，所以編譯 worker 常駐；執行 worker 很便宜，
 TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 
 語言在第一次被選到時才開始載入。
@@ -42,7 +45,7 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 | --- | --- |
 | AC | 輸出相符（忽略行尾空白與結尾空行）；有 checker 的題目則由 checker 判定 |
 | WA | 輸出不符，或 checker 不接受 |
-| CE | 編譯錯誤（C++），不執行任何測資 |
+| CE | 編譯錯誤（C++、Go），不執行任何測資 |
 | RE | 例外、非零 `SystemExit` 或非零 exit code（含 `process.exit`） |
 | TLE | 耗時超過限制；超過限制 +1 秒仍未結束就砍掉 worker |
 | SKIP | 第一筆 TLE 之後的測資不再執行（每次 TLE 都要重載 Pyodide） |
@@ -100,6 +103,17 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
   深度大的 DFS 要改成迴圈
 - 程式結束的判斷：stdin 事件送完、沒有未完成的 timer 就結束；卡在永遠不會 resolve 的 Promise 不算 TLE
 
+## Go 的限制
+
+- 編譯參數：預設值（有最佳化），連結時 `-s -w`；第一次選 Go 時才下載 compile、link 與標準函式庫
+  （gzip 後約 19 MB），編譯一次約 1 秒；執行速度約為原生的 1/2
+- 只能 import 解題常用的標準函式庫：`bufio` `bytes` `cmp` `container/*` `errors` `fmt` `io` `maps`
+  `math` `math/big` `math/bits` `math/rand` `math/rand/v2` `os` `regexp` `slices` `sort` `strconv`
+  `strings` `time` `unicode` `unicode/utf8`（清單在 `scripts/build.sh` 的 `GO_PKGS`）；
+  其他的會是 `could not import` 的 CE
+- wasm 的呼叫堆疊受瀏覽器限制，遞迴深度約 2 萬層（Chromium），太深會 `RangeError` 判 RE
+- 放在 `dist/go/`，跟 C++ 一樣離線時不能用
+
 ## 新增題目
 
 在 `problems/` 下開一個資料夾，再更新 `problems/problems.json`：
@@ -121,7 +135,7 @@ go test ./problems -update   # 從每題的 problem.json 重新產生 problems.j
 `version` 是題目最後修改的時間（`YYYY-MM-DD hh:mm:ss`），改了敘述、測資或時間限制就要更新；
 提交紀錄會記下評測時的版本，版本不同時標示「舊版」。
 
-`time_limits_ms` 選填，依語言（`py`、`cpp`、`js`）覆寫 `time_limit_ms`，沒列出的語言用 `time_limit_ms`。
+`time_limits_ms` 選填，依語言（`py`、`cpp`、`js`、`go`）覆寫 `time_limit_ms`，沒列出的語言用 `time_limit_ms`。
 只在其他語言用錯的複雜度也能過時才需要，例如 `0006-rmq` 的 `{"cpp": 500, "js": 1000}`。
 題目頁顯示目前語言的時限，題目列表顯示 `time_limit_ms` 與有覆寫的語言，例如 `2000 ms（C++ 500 ms、JavaScript 1000 ms）`。
 
@@ -164,14 +178,15 @@ scripts/build.sh serve    # http://localhost:3000
 ```
 
 `build.sh` 是包一層 toolgui 的 `go tool toolgui-wasm build|serve`，多做的事是把
-Pyodide、WASI shim 與 `web/` 準備到 `.cache/assets`，並把 clang 與 PCH 放到 `dist/cpp/`。跑過一次 `build.sh` 後，也可以直接用：
+Pyodide、WASI shim 與 `web/` 準備到 `.cache/assets`，並把 clang 與 PCH 放到 `dist/cpp/`、
+`GOOS=wasip1` 的 Go compile、link 與標準函式庫（`std.tar`）放到 `dist/go/`。跑過一次 `build.sh` 後，也可以直接用：
 
 ```sh
 go tool toolgui-wasm serve -o dist -assets .cache/assets ./cmd/offline-judge
 ```
 
-直接 serve 時不帶 `-assets` 的話，頁面能開，但沒有 Python / C++ / JavaScript 環境可以執行；
-`dist/cpp/` 要先由 `build.sh` 產生，C++ 才能用。
+直接 serve 時不帶 `-assets` 的話，頁面能開，但沒有 Python / C++ / JavaScript / Go 環境可以執行；
+`dist/cpp/`、`dist/go/` 要先由 `build.sh` 產生，C++、Go 才能用。
 
 `dist/` 是靜態網站，可直接放到 GitHub Pages（見 `.github/workflows/pages.yml`，
 需在 repo 設定把 Pages 來源設為 GitHub Actions）。

@@ -1,5 +1,5 @@
 // Compiles C++ to a WASI module with clang (YoWASP). Long-lived: loading
-// clang is slow, so programs run in cpprun.mjs, which can be killed freely.
+// clang is slow, so programs run in wasirun.mjs, which can be killed freely.
 //
 // in:  {id, code}
 // out: {type: "ready"} | {type: "error", error}
