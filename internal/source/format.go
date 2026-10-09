@@ -72,6 +72,7 @@ func (native) files(ix *Index, id string) []File {
 			continue
 		}
 		if rest == "statement.md" || rest == problems.CheckerFile || rest == problems.InteractorFile ||
+			isGraderFile(rest) ||
 			(path.Dir(rest) == "tests" && (path.Ext(rest) == ".in" || path.Ext(rest) == ".out")) {
 			out = append(out, f)
 		}
@@ -81,6 +82,16 @@ func (native) files(ix *Index, id string) []File {
 
 func (native) load(fsys fs.FS, id string, m problems.Meta) (*problems.Problem, error) {
 	return problems.LoadWithMeta(fsys, id, m)
+}
+
+// isGraderFile reports whether name is a grader or template.
+func isGraderFile(name string) bool {
+	for _, lang := range problems.Langs {
+		if name == problems.GraderFile(lang) || name == problems.TemplateFile(lang) {
+			return true
+		}
+	}
+	return false
 }
 
 // find returns the file at p.

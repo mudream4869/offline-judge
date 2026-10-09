@@ -174,6 +174,7 @@ problems/0004-xxx/
     01.in / 01.out
   checker.js      選填，答案不唯一時用（見下方）；浮點數誤差等只要設 problem.json 的 compare
   interactor.js   選填，互動題用（見下方）；與 checker.js 擇一
+  grader/<語言>/   選填，函式題用（見下方）
   _solutions/     選填，參考解，給 scripts/bench.mjs 定時限用（見下方）；互動題必須有 ac.py
 ```
 
@@ -299,6 +300,24 @@ export default function interact(input) {
 - 跟 checker 一樣先拿掉儲存與網路 API，但跟選手程式在同一個 worker、與網站同 origin，只能算盡力而為；丟例外算評測失敗
 - `go test ./problems` 會用 Node 讓 `_solutions/ac.py` 跟互動程式對答，所有測資都要通過；
   這裡互動程式在程式輸出完整的一行後就被呼叫，參考解要 `flush=True`
+
+### 函式題
+
+選手只寫函式，輸入輸出由題目的 grader 處理（參考 TIOJ 的 interlib；範例：`problems/0011-max-subarray`）：
+
+```
+grader/py/grader.py      主程式，用 from solution import ... 呼叫選手的函式
+grader/py/template.py    選填，編輯器的預設程式碼（函式空殼）
+grader/cpp/grader.cpp    主程式，宣告函式原型；與選手的 solution.cpp 一起編譯連結
+grader/js/grader.js      主程式，用 require('./solution') 取得選手 module.exports 的函式
+grader/go/grader.go      主程式（package main）；與選手的 solution.go 一起編譯
+```
+
+- 有任何一個 grader 就是函式題；沒有 grader 的語言不能提交。一種語言一個資料夾，Go 與 C++ 檔案才不會混在同一個 package
+- 測資的 `.in` / `.out` 是 grader 的輸入輸出，比對方式照常（`compare`、`checker.js`）；可以跟 `interactor.js` 並用
+- 選手的程式碼在錯誤訊息裡叫 `solution.py`、`solution.cpp`、`solution.js`、`solution.go`
+- `go test ./problems` 會用本機的 python3 跑 `_solutions/ac.py` 與 `grader.py`，所有測資都要通過；
+  函式題要有全部 4 種語言的 grader。`scripts/bench.mjs` 也會帶上 grader
 
 ## 開發
 

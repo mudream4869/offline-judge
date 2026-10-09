@@ -59,6 +59,8 @@ type Input struct {
 	// Interactor is interactor.js. When set, the program reads what it
 	// answers instead, and Stdin is the interactor's input.
 	Interactor string
+	// Grader is the main program, which calls code's functions; "" if none.
+	Grader string
 }
 
 // Runner executes code under a time limit.
@@ -121,6 +123,8 @@ type Spec struct {
 	// Interactor is interactor.js for an interactive problem: it talks to
 	// the program, with each case's Input as its input, and gives the verdict.
 	Interactor string
+	// Grader is the main program in the submission's language; "" if none.
+	Grader string
 	// Subtasks score the cases. Without them a TLE skips the rest; with
 	// them, a case is skipped once every subtask it is in has failed.
 	Subtasks []Subtask
@@ -165,7 +169,7 @@ func Judge(ctx context.Context, r Runner, code string, cases []Case,
 			rep.Cases = append(rep.Cases, CaseResult{Name: c.Name, Verdict: Skip})
 			continue
 		}
-		res, err := r.Run(ctx, code, Input{Stdin: c.Input, Interactor: spec.Interactor}, limit)
+		res, err := r.Run(ctx, code, Input{Stdin: c.Input, Interactor: spec.Interactor, Grader: spec.Grader}, limit)
 		if err != nil {
 			return rep, err
 		}

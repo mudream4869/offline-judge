@@ -10,6 +10,9 @@
 //	<id>/statement.md   a "## 提示" section becomes Hint
 //	<id>/checker.js     optional; judges outputs instead of an exact match
 //	<id>/interactor.js  optional; makes the problem interactive, .out optional
+//	<id>/grader/<lang>/grader.<lang>    optional; the main program, which calls
+//	                                    the submission's functions (lang: py, cpp, js, go)
+//	<id>/grader/<lang>/template.<lang>  optional; the starting code, with a grader
 //	<id>/tests/<name>.in, <name>.out   names starting with "sample" are shown
 package problems
 
@@ -46,7 +49,12 @@ type Problem struct {
 	// Interactor is interactor.js source; empty unless interactive. Then
 	// each case's Input is the interactor's input.
 	Interactor string
-	Subtasks   []Subtask // empty: all or nothing
+	// Graders are grader sources by language id; empty unless the
+	// submission is functions they call. Languages without one can't submit.
+	Graders map[string]string
+	// Templates are starting code by language id; may be empty.
+	Templates map[string]string
+	Subtasks  []Subtask // empty: all or nothing
 	// Unsupported says why the problem can't be judged here; "" if it can.
 	Unsupported string
 }
@@ -296,6 +304,11 @@ func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 		return nil, fmt.Errorf("有 %s 或 %s 時不能設定 compare", CheckerFile, InteractorFile)
 	}
 
+	graders, templates, err := loadGraders(fsys, id)
+	if err != nil {
+		return nil, err
+	}
+
 	cases, err := loadCases(fsys, path.Join(id, "tests"), interactor != "")
 	if err != nil {
 		return nil, err
@@ -321,6 +334,8 @@ func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 		Compare:      m.Compare,
 		Checker:      checker,
 		Interactor:   interactor,
+		Graders:      graders,
+		Templates:    templates,
 		Subtasks:     subtasks,
 	}, nil
 }
@@ -365,6 +380,41 @@ const (
 	CheckerFile    = "checker.js"
 	InteractorFile = "interactor.js"
 )
+
+// Langs are the language ids of graders and templates.
+var Langs = []string{"py", "cpp", "js", "go"}
+
+// GraderFile and TemplateFile are the paths of lang's grader and template in
+// a problem. One directory per language, so Go and C++ files don't mix.
+func GraderFile(lang string) string   { return "grader/" + lang + "/grader." + lang }
+func TemplateFile(lang string) string { return "grader/" + lang + "/template." + lang }
+
+// loadGraders reads the graders and templates of problem id.
+func loadGraders(fsys fs.FS, id string) (graders, templates map[string]string, err error) {
+	for _, lang := range Langs {
+		g, err := readOptional(fsys, path.Join(id, GraderFile(lang)))
+		if err != nil {
+			return nil, nil, err
+		}
+		t, err := readOptional(fsys, path.Join(id, TemplateFile(lang)))
+		if err != nil {
+			return nil, nil, err
+		}
+		if t != "" && g == "" {
+			return nil, nil, fmt.Errorf("有 %s 但沒有 %s", TemplateFile(lang), GraderFile(lang))
+		}
+		if g != "" {
+			if graders == nil {
+				graders, templates = map[string]string{}, map[string]string{}
+			}
+			graders[lang] = g
+			if t != "" {
+				templates[lang] = t
+			}
+		}
+	}
+	return graders, templates, nil
+}
 
 // readOptional reads name, or returns "" if it doesn't exist.
 func readOptional(fsys fs.FS, name string) (string, error) {

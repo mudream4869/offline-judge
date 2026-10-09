@@ -55,6 +55,10 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	if pr.Interactor != "" {
 		tgcomp.Caption(p.Main, "互動題：程式與題目的互動程式一問一答")
 	}
+	if len(pr.Graders) > 0 {
+		tgcomp.Caption(p.Main, "函式題：只要寫題目要求的函式，輸入輸出由題目的 grader 處理；"+
+			"支援 "+graderLangs(pr))
+	}
 	if c := compareCaption(pr.Compare); c != "" {
 		tgcomp.Caption(p.Main, c)
 	}
@@ -97,7 +101,7 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 		Language:  lg.hl,
 		Height:    16,
 		MaxHeight: 40,
-		Default:   memo.getText("code_"+key, lg.code),
+		Default:   memo.getText("code_"+key, startCode(lg, pr)),
 	})
 	memo.setText("code_"+key, code)
 
@@ -145,7 +149,7 @@ func judgeAndSave(ctx context.Context, c *tgframe.Container, lg *lang,
 	pr *problems.Problem, code string) *submission {
 
 	spec := judge.Spec{Limit: pr.TimeLimitFor(lg.id), Interactor: pr.Interactor,
-		Compare: pr.Compare, Subtasks: pr.JudgeSubtasks()}
+		Grader: pr.Graders[lg.id], Compare: pr.Compare, Subtasks: pr.JudgeSubtasks()}
 	if pr.Checker != "" {
 		spec.Check = checkRunner().Checker(pr.Checker)
 	}
@@ -205,7 +209,30 @@ func canRun(c *tgframe.Container, lg *lang, pr *problems.Problem) bool {
 		tgcomp.MessageWarning(c, lg.name+" 還不支援互動題，請改用其他語言")
 		return false
 	}
+	if len(pr.Graders) > 0 && pr.Graders[lg.id] == "" {
+		tgcomp.MessageWarning(c, "這題沒有 "+lg.name+" 的 grader，請改用 "+graderLangs(pr))
+		return false
+	}
 	return true
+}
+
+// startCode is the editor's code before any edit: the problem's template, if any.
+func startCode(lg *lang, pr *problems.Problem) string {
+	if t := pr.Templates[lg.id]; t != "" {
+		return t
+	}
+	return lg.code
+}
+
+// graderLangs names the languages pr has graders for.
+func graderLangs(pr *problems.Problem) string {
+	var names []string
+	for _, l := range langs {
+		if pr.Graders[l.id] != "" {
+			names = append(names, l.name)
+		}
+	}
+	return strings.Join(names, "、")
 }
 
 // historyPanel lists recent submissions of a problem in all languages.
@@ -258,7 +285,8 @@ func customPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 
 	limit := pr.TimeLimitFor(lg.id)
 	done := tgcomp.Spinner(c, "執行中…")
-	res, err := run.Run(p.Context, code, judge.Input{Stdin: stdin, Interactor: pr.Interactor}, limit)
+	res, err := run.Run(p.Context, code, judge.Input{Stdin: stdin, Interactor: pr.Interactor,
+		Grader: pr.Graders[lg.id]}, limit)
 	done()
 	if err != nil {
 		tgcomp.MessageDanger(c, err.Error())

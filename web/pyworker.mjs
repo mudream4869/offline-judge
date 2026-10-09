@@ -1,20 +1,21 @@
 // Runs Python submissions with Pyodide. One worker = one Pyodide instance;
 // the Go side terminates it on timeout and starts another.
 //
-// in:  {id, code, stdin, interactor?, outputLimit?}  (outputLimit: stdout + stderr bytes)
+// in:  {id, code, stdin, interactor?, grader?, outputLimit?}  (outputLimit: stdout + stderr bytes)
 // out: {type: "ready"} | {type: "error", error}
 //      {type: "result", id, status: "ok"|"re"|"ole", stdout, stderr, ms, fatal,
 //       judged?, iaError?}
 //
 // With interactor (interactor.js source), stdin is its input and the
 // program reads what it answers; stdout is the transcript (sandbox.mjs).
+// With grader, the grader is __main__ and the code is module "solution".
 
 import { loadPyodide } from './pyodide/pyodide.mjs'
 import { lockdown, importDefault, Interaction, interactionResult } from './sandbox.mjs'
 
 // Fresh stdio and globals per run, so runs don't leak into each other.
 const HARNESS = `
-import sys, io, time, traceback
+import sys, io, time, traceback, types
 
 class _Interactive(io.RawIOBase):
     """Reads what ask answers, given the output since the last read."""
@@ -66,7 +67,7 @@ class _Out(io.BytesIO):
         """Appends the harness's own message, outside the budget."""
         io.BytesIO.write(self, s.encode())
 
-def _judge_run(code, data, limit, ask=None):
+def _judge_run(code, data, limit, ask=None, grader=None):
     budget = _Budget(limit)
     out = _Out(budget)
     raw = _Interactive(ask, out) if ask else None
@@ -82,7 +83,14 @@ def _judge_run(code, data, limit, ask=None):
     status = "ok"
     t0 = time.perf_counter()
     try:
-        exec(compile(code, "main.py", "exec"), {"__name__": "__main__"})
+        if grader is None:
+            exec(compile(code, "main.py", "exec"), {"__name__": "__main__"})
+        else:
+            sol = types.ModuleType("solution")
+            sol.__file__ = "solution.py"
+            sys.modules["solution"] = sol
+            exec(compile(code, "solution.py", "exec"), sol.__dict__)
+            exec(compile(grader, "grader.py", "exec"), {"__name__": "__main__"})
     except SystemExit as e:
         if e.code not in (None, 0):
             status = "re"
@@ -102,6 +110,7 @@ def _judge_run(code, data, limit, ask=None):
             except BaseException:
                 pass
         sys.stdin, sys.stdout, sys.stderr = saved
+        sys.modules.pop("solution", None)
     # Even if the program caught _OutputLimit.
     if budget.over:
         status = "ole"
@@ -113,7 +122,7 @@ def _judge_run(code, data, limit, ask=None):
 
 let run = null
 
-self.onmessage = async ({ data: { id, code, stdin, interactor, outputLimit = Infinity } }) => {
+self.onmessage = async ({ data: { id, code, stdin, interactor, grader, outputLimit = Infinity } }) => {
   await ready
   let ia = null
   if (interactor) {
@@ -129,8 +138,8 @@ self.onmessage = async ({ data: { id, code, stdin, interactor, outputLimit = Inf
   }
   try {
     const res = ia
-      ? run(code, '', outputLimit, (out) => ia.read(out) ?? undefined)
-      : run(code, stdin, outputLimit)
+      ? run(code, '', outputLimit, (out) => ia.read(out) ?? undefined, grader)
+      : run(code, stdin, outputLimit, undefined, grader)
     let [status, stdout, stderr, ms, rest] = res.toJs()
     res.destroy()
     let extra = {}

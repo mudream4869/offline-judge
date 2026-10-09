@@ -28,6 +28,7 @@ type CompileRunner struct {
 	seq int
 	// Last compile, reused by every case of a submission.
 	code   string
+	grader string
 	module js.Value // undefined on CE
 	ce     string
 }
@@ -55,10 +56,10 @@ func (r *CompileRunner) awaitLoad() {
 	cc.await()
 }
 
-func (r *CompileRunner) compile(ctx context.Context, code string) error {
+func (r *CompileRunner) compile(ctx context.Context, code, grader string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.code == code && (!r.module.IsUndefined() || r.ce != "") {
+	if r.code == code && r.grader == grader && (!r.module.IsUndefined() || r.ce != "") {
 		return nil
 	}
 
@@ -72,6 +73,9 @@ func (r *CompileRunner) compile(ctx context.Context, code string) error {
 
 	msg := js.Global().Get("Object").New()
 	msg.Set("code", code)
+	if grader != "" {
+		msg.Set("grader", grader)
+	}
 	r.seq++
 	data, err := r.cc.post(ctx, r.seq, msg, time.After(compileTimeout))
 	if err == errTimeout {
@@ -84,7 +88,7 @@ func (r *CompileRunner) compile(ctx context.Context, code string) error {
 		return err
 	}
 
-	r.code = code
+	r.code, r.grader = code, grader
 	r.module = js.Undefined()
 	r.ce = ""
 	if data.Get("status").String() == "ok" {
@@ -98,7 +102,7 @@ func (r *CompileRunner) compile(ctx context.Context, code string) error {
 func (r *CompileRunner) Run(ctx context.Context, code string, in judge.Input,
 	limit time.Duration) (judge.RunResult, error) {
 
-	if err := r.compile(ctx, code); err != nil {
+	if err := r.compile(ctx, code, in.Grader); err != nil {
 		return judge.RunResult{}, err
 	}
 
@@ -111,6 +115,6 @@ func (r *CompileRunner) Run(ctx context.Context, code string, in judge.Input,
 
 	msg := js.Global().Get("Object").New()
 	msg.Set("module", module)
-	setInput(msg, in)
+	setInput(msg, judge.Input{Stdin: in.Stdin, Interactor: in.Interactor}) // grader is linked in
 	return r.exec.run(ctx, msg, limit)
 }

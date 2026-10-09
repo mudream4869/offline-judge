@@ -86,9 +86,10 @@ const RUNNER = { py: 'pyworker.mjs', js: 'jsrun.mjs' }
 const modules = []
 
 // compile returns {key} or {ce}; interpreted languages keep the source.
-window.compile = async (lang, code) => {
-  if (!COMPILER[lang]) return { key: modules.push(code) - 1 }
-  const r = await pool(COMPILER[lang]).call({ code }, 120000)
+// grader, if any, is linked in here, or passed to run for interpreted ones.
+window.compile = async (lang, code, grader) => {
+  if (!COMPILER[lang]) return { key: modules.push({ code, grader }) - 1 }
+  const r = await pool(COMPILER[lang]).call({ code, ...(grader ? { grader } : {}) }, 120000)
   if (!r) return { ce: 'compile timeout' }
   if (r.status !== 'ok') return { ce: r.stderr }
   return { key: modules.push(r.module) - 1 }
@@ -98,7 +99,7 @@ window.compile = async (lang, code) => {
 window.run = async (lang, key, stdin, interactor, cap) => {
   const msg = { stdin, ...(interactor ? { interactor } : {}) }
   if (COMPILER[lang]) msg.module = modules[key]
-  else msg.code = modules[key]
+  else Object.assign(msg, modules[key]) // {code, grader}
   const r = await pool(RUNNER[lang] || 'wasirun.mjs').call(msg, cap)
   if (!r) return { status: 'tle', ms: cap }
   const { module, ...rest } = r
@@ -157,7 +158,7 @@ async function load(id, page) {
   const checker = src ? (input, output, answer) => page.evaluate(
     (a) => check(...a), [src, input, output, answer]) : null
   const solutions = readdirSync(join(dir, '_solutions')).filter((f) => LANGS[extname(f)]).sort()
-  return { id, dir, meta, cases, checker, interactor: read('interactor.js'), solutions }
+  return { id, dir, meta, cases, checker, interactor: read('interactor.js'), solutions, read }
 }
 
 const limitOf = (meta, lang) => meta.time_limits_ms?.[lang] ?? meta.time_limit_ms
@@ -167,7 +168,8 @@ async function bench(page, p, file, judge) {
   const lang = LANGS[extname(file)]
   const code = readFileSync(join(p.dir, '_solutions', file), 'utf8')
   const expectAC = file.startsWith('ac')
-  const { key, ce } = await page.evaluate(([l, c]) => compile(l, c), [lang, code])
+  const grader = p.read(`grader/${lang}/grader.${lang}`) || undefined
+  const { key, ce } = await page.evaluate(([l, c, g]) => compile(l, c, g), [lang, code, grader])
   if (ce !== undefined) return { lang, expectAC, verdict: 'CE', detail: ce.split('\n')[0] }
 
   const result = await benchCases(p.cases,
