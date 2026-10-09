@@ -13,7 +13,8 @@ import { execSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { extname, join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+
+import { benchCases, createJudge } from './benchjudge.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const DIST = join(ROOT, 'dist')
@@ -48,7 +49,7 @@ async function loadPlaywright() {
 
 // ---- page: runs the workers the same way cmd/offline-judge does ----
 
-const PAGE = `<!doctype html><script type="module">
+const PAGE = `<!doctype html><meta charset="utf-8"><script type="module">
 const url = (n) => new URL('/assets/' + n, location.href).href
 
 // One worker at a time; killed and respawned on timeout or a fatal result.
@@ -103,6 +104,13 @@ window.run = async (lang, key, stdin, interactor, cap) => {
   const { module, ...rest } = r
   return rest
 }
+// Use the site's checker worker, including its return validation and sandbox.
+window.check = async (checker, input, output, answer) => {
+  const r = await pool('checker.mjs').call({ checker, input, output, answer }, 5000)
+  if (!r) throw new Error('checker 逾時')
+  if (r.error) throw new Error('checker 錯誤：' + r.error)
+  return r.ok ? true : r.message || false
+}
 window.loaded = true
 </script>`
 
@@ -131,11 +139,7 @@ function serve() {
 
 // ---- problems ----
 
-// normalize matches internal/judge.
-const normalize = (s) => s.replace(/\r\n/g, '\n').split('\n')
-  .map((l) => l.replace(/[ \t\r]+$/, '')).join('\n').replace(/\n+$/, '')
-
-async function load(id) {
+async function load(id, page) {
   const dir = join(PROBLEMS, id)
   const meta = JSON.parse(readFileSync(join(dir, 'problem.json'), 'utf8'))
   const cases = readdirSync(join(dir, 'tests')).filter((f) => f.endsWith('.in')).sort()
@@ -149,48 +153,27 @@ async function load(id) {
       }
     })
   const read = (f) => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : '')
-  const checker = read('checker.js')
-    ? (await import(pathToFileURL(join(dir, 'checker.js')))).default : null
+  const src = read('checker.js')
+  const checker = src ? (input, output, answer) => page.evaluate(
+    (a) => check(...a), [src, input, output, answer]) : null
   const solutions = readdirSync(join(dir, '_solutions')).filter((f) => LANGS[extname(f)]).sort()
   return { id, dir, meta, cases, checker, interactor: read('interactor.js'), solutions }
 }
 
 const limitOf = (meta, lang) => meta.time_limits_ms?.[lang] ?? meta.time_limit_ms
 
-// verdict judges one result like cmd/offline-judge, ignoring the time limit.
-async function verdict(p, c, r) {
-  if (r.status === 'tle') return 'TLE'
-  if (r.iaError) throw new Error(r.iaError)
-  if (p.interactor) return r.judged?.ok ? 'AC' : 'WA'
-  if (r.status === 're') return 'RE'
-  if (p.checker) return (await p.checker(c.input, r.stdout, c.output)) === true ? 'AC' : 'WA'
-  return normalize(r.stdout) === normalize(c.output) ? 'AC' : 'WA'
-}
-
 // bench returns the solution's verdict per case and its slowest case.
-async function bench(page, p, file) {
+async function bench(page, p, file, judge) {
   const lang = LANGS[extname(file)]
   const code = readFileSync(join(p.dir, '_solutions', file), 'utf8')
   const expectAC = file.startsWith('ac')
   const { key, ce } = await page.evaluate(([l, c]) => compile(l, c), [lang, code])
   if (ce !== undefined) return { lang, expectAC, verdict: 'CE', detail: ce.split('\n')[0] }
 
-  let worst = null
-  for (const c of p.cases) {
-    let best = null
-    for (let i = 0; i < runs; i++) {
-      const r = await page.evaluate((a) => run(...a), [lang, key, c.input, p.interactor, cap])
-      // ac: slowest run; tle: fastest.
-      if (!best || (expectAC ? r.ms > best.ms : r.ms < best.ms)) best = r
-      if (r.status === 'tle') break
-    }
-    const v = await verdict(p, c, best)
-    if (v !== 'AC' && v !== 'TLE') return { lang, expectAC, verdict: v, case: c.name, ms: best.ms }
-    if (!worst || best.ms > worst.ms) worst = { case: c.name, ms: best.ms, tle: v === 'TLE' }
-    // Like the judge: give up after a kill.
-    if (v === 'TLE') break
-  }
-  return { lang, expectAC, verdict: 'ok', ...worst }
+  const result = await benchCases(p.cases,
+    (c) => page.evaluate((a) => run(...a), [lang, key, c.input, p.interactor, cap]),
+    (c, r) => judge.verdict(p, c, r), { runs, expectAC })
+  return { lang, expectAC, ...result }
 }
 
 // ---- report ----
@@ -201,14 +184,16 @@ let failed = false
 const pw = await loadPlaywright()
 const srv = await serve()
 const browser = await pw.chromium.launch()
+let judge
 try {
+  judge = createJudge(ROOT)
   const page = await browser.newPage()
   page.on('pageerror', (e) => console.error('page error:', e))
   await page.goto(`http://127.0.0.1:${srv.address().port}/bench.html`)
   await page.waitForFunction(() => window.loaded)
 
   for (const id of ids) {
-    const p = await load(id)
+    const p = await load(id, page)
     console.log(`\n${id}  ${p.meta.title}`)
     const byLang = {}
     for (const file of p.solutions) {
@@ -217,7 +202,7 @@ try {
         console.log(`  ${file.padEnd(10)} 略過（JavaScript 尚未支援互動題）`)
         continue
       }
-      const r = await bench(page, p, file)
+      const r = await bench(page, p, file, judge)
       const limit = limitOf(p.meta, lang)
       let mark
       if (r.verdict !== 'ok') {
@@ -244,6 +229,7 @@ try {
     }
   }
 } finally {
+  judge?.close()
   await browser.close()
   srv.close()
 }
