@@ -1,4 +1,3 @@
-# Reference solution, used by problems_test.go; not part of the problem.
 lo, hi = 1, int(input())
 while True:
     mid = (lo + hi) // 2
