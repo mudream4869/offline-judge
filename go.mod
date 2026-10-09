@@ -1,7 +1,7 @@
 module github.com/mudream4869/offline-judge
 
-go 1.27.1
+go 1.27.2
 
-require github.com/voilelab/toolgui v0.13.0
+require github.com/voilelab/toolgui v0.14.0
 
 tool github.com/voilelab/toolgui/cmd/toolgui-wasm
