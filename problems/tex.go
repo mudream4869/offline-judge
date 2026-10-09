@@ -11,6 +11,11 @@ import (
 // Images aren't downloaded; they show as their caption or file name.
 func texToMarkdown(tex string) string {
 	s := stripTexComments(tex)
+	// Before \problemname is setup (macros, lengths), not the statement.
+	if i := indexCmd(s, "problemname"); i >= 0 {
+		s = s[i:]
+	}
+	s = texVerb(s)
 	s = strings.NewReplacer("\r\n", "\n", `\(`, "$", `\)`, "$", `\[`, "\n$$\n", `\]`, "\n$$\n").Replace(s)
 
 	s = replaceCmd(s, "problemname", 1, func([]string) string { return "" })
@@ -47,6 +52,31 @@ func texToMarkdown(tex string) string {
 
 	s = regexp.MustCompile(`\n{3,}`).ReplaceAllString(s, "\n\n")
 	return strings.TrimSpace(s) + "\n"
+}
+
+// texVerb turns \verb|…|, with any delimiter, into `…`.
+func texVerb(s string) string {
+	var b strings.Builder
+	for {
+		i := indexCmd(s, "verb")
+		if i < 0 {
+			b.WriteString(s)
+			return b.String()
+		}
+		rest := strings.TrimPrefix(s[i+len(`\verb`):], "*")
+		if rest == "" {
+			b.WriteString(s)
+			return b.String()
+		}
+		d := rest[:1]
+		end := strings.Index(rest[1:], d)
+		if end < 0 {
+			b.WriteString(s)
+			return b.String()
+		}
+		b.WriteString(s[:i] + "`" + rest[1:1+end] + "`")
+		s = rest[2+end:]
+	}
 }
 
 // stripTexComments drops % comments, keeping \%.
