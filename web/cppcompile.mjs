@@ -62,12 +62,11 @@ self.onmessage = async ({ data: { id, code } }) => {
 
 const ready = (async () => {
   try {
-    // clang lives outside assets/ so the service worker doesn't precache it.
     // Imported here so a failure (e.g. offline) is reported, not a silent hang.
-    runClang = (await import('../cpp/clang/bundle.js')).runClang
+    runClang = (await import('./cpp/clang/bundle.js')).runClang
     const url = (name) => new URL(name, import.meta.url)
     header = await (await fetch(url('./stdc++.h'))).text()
-    const resp = await fetch(url('../cpp/stdc++.h.pch'))
+    const resp = await fetch(url('./cpp/stdc++.h.pch'))
     if (resp.ok) pch = new Uint8Array(await resp.arrayBuffer())
 
     // Warm up: fetches and compiles clang, and checks the toolchain works.

@@ -28,11 +28,13 @@ func Index(p *tgframe.Params) error {
 	return nil
 }
 
+// app reruns open pages when background loads finish.
+var app = tgframe.NewApp()
+
 func main() {
 	// Python is the default language: start loading it now.
 	langs[0].runner()
 
-	app := tgframe.NewApp()
 	app.SetTitle("Offline Judge")
 	app.SetAbout(about)
 	app.AddPageByConfig(&tgframe.PageConfig{Name: "index", Title: "首頁", Emoji: "🏠"}, Index)
