@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -34,8 +35,13 @@ func TestAll(t *testing.T) {
 		if _, err := time.Parse(time.DateTime, p.Version); err != nil {
 			t.Errorf("%s: version should be like 2026-10-08 15:04:05: %q", p.ID, p.Version)
 		}
-		if len(p.Tags) == 0 {
+		if len(p.Tags)+len(p.SolutionTags) == 0 {
 			t.Errorf("%s: no tags", p.ID)
+		}
+		for _, tag := range p.SolutionTags {
+			if slices.Contains(p.Tags, tag) {
+				t.Errorf("%s: %q in both tags and solution_tags", p.ID, tag)
+			}
 		}
 		for lang := range p.TimeLimits {
 			if !langIDs[lang] {
