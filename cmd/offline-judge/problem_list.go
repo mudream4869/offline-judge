@@ -128,7 +128,7 @@ func problemList(p *tgframe.Params, es []source.Entry) {
 	tgcomp.Title(p.Main, "題目列表")
 	tgcomp.Caption(p.Main, "點一題開始作答")
 	var ids []string
-	var rows [][]string
+	var rows [][]tgcomp.Cell
 	for i := range es {
 		e := &es[i]
 		num := problemNumber(e.ID)
@@ -144,20 +144,26 @@ func problemList(p *tgframe.Params, es []source.Entry) {
 			off = "✓"
 		}
 		ids = append(ids, e.ID)
-		rows = append(rows, []string{st, num, e.Title, strings.Join(tags, "、"),
-			fmtLimits(e.TimeLimit, e.TimeLimits), e.Version, off})
+		limit := tgcomp.NumberCell(float64(e.TimeLimit.Milliseconds())).
+			WithDisplay(fmtLimits(e.TimeLimit, e.TimeLimits))
+		rows = append(rows, []tgcomp.Cell{tgcomp.TextCell(st), tgcomp.TextCell(num),
+			tgcomp.TextCell(e.Title), tgcomp.TextCell(strings.Join(tags, "、")), limit,
+			tgcomp.TextCell(e.Version), tgcomp.TextCell(off)})
 	}
 	if len(rows) == 0 {
 		tgcomp.MessageInfo(p.Main, "沒有符合的題目")
 		return
 	}
-	sel := tgcomp.DataFrame(p.Main, []string{"狀態", "編號", "題目", "標籤", "時間限制", "版本", "可離線"}, rows,
+	cols := make([]tgcomp.DataFrameColumnConf, 7)
+	cols[4].Type = tgcomp.ColumnTypeNumber // sorted by the default limit
+	sel := tgcomp.DataFrameCells(p.Main, []string{"狀態", "編號", "題目", "標籤", "時間限制", "版本", "可離線"}, rows,
 		(&tgcomp.DataFrameConf{
-			Base:      tgframe.Base{ID: "problem_list"},
-			PageSize:  100,
-			Selection: tgcomp.SelectionModeSingle,
-			RowKeys:   ids,
-		}).SetSortable(false).SetSearchable(false))
+			Base:       tgframe.Base{ID: "problem_list"},
+			PageSize:   100,
+			ColumnConf: cols,
+			Selection:  tgcomp.SelectionModeSingle,
+			RowKeys:    ids,
+		}).SetSearchable(false))
 	if len(sel) == 1 {
 		p.Navigate("problems", pickQuery(q, ids[sel[0]]))
 	}
