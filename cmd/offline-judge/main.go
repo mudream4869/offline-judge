@@ -186,6 +186,7 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 	side := tgcomp.Empty(p.Sidebar)
 	var query string
 	var want []string
+	filter := 0
 	side.With(func(c *tgframe.Container) {
 		query = strings.ToLower(strings.TrimSpace(tgcomp.Textbox(c, "搜尋", &tgcomp.TextboxConf{
 			Base:        tgframe.Base{ID: "problem_search"},
@@ -199,7 +200,13 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 				want = append(want, tags[i])
 			}
 		}
+		if i := tgcomp.Select(c, "狀態", statusFilters, (&tgcomp.SelectConf{
+			Base: tgframe.Base{ID: "problem_status"},
+		}).SetDefault(0)); i != nil {
+			filter = *i
+		}
 	})
+	status := solveStatus(memo.allSubmissions())
 
 	slot := tgcomp.Empty(p.Main)
 	var shown []*source.Entry
@@ -213,8 +220,10 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 		for i := range es {
 			e := &es[i]
 			num := problemNumber(e.ID)
+			st := status[e.ID]
 			if !hasTags(e.Tags, want) ||
-				!strings.Contains(strings.ToLower(num+" "+e.Title), query) {
+				!strings.Contains(strings.ToLower(num+" "+e.Title), query) ||
+				filter == 1 && st == solvedMark || filter == 2 && st != solvedMark {
 				continue
 			}
 			off := ""
@@ -223,14 +232,14 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 			}
 			shown = append(shown, e)
 			ids = append(ids, e.ID)
-			rows = append(rows, []string{num, e.Title, strings.Join(e.Tags, "、"),
+			rows = append(rows, []string{st, num, e.Title, strings.Join(e.Tags, "、"),
 				fmtLimits(e.TimeLimit, e.TimeLimits), e.Version, off})
 		}
 		if len(rows) == 0 {
 			tgcomp.MessageInfo(c, "沒有符合的題目")
 			return
 		}
-		sel = tgcomp.DataFrame(c, []string{"編號", "題目", "標籤", "時間限制", "版本", "可離線"}, rows,
+		sel = tgcomp.DataFrame(c, []string{"狀態", "編號", "題目", "標籤", "時間限制", "版本", "可離線"}, rows,
 			(&tgcomp.DataFrameConf{
 				Base:      tgframe.Base{ID: "problem_list"},
 				PageSize:  100,
@@ -246,6 +255,27 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 	side.Clear()
 	p.State.Set(pickedKey, shown[sel[0]].ID)
 	return shown[sel[0]]
+}
+
+// statusFilters are the choices of the list's status filter.
+var statusFilters = []string{"全部", "未通過", "已通過"}
+
+const (
+	solvedMark = "✓" // some submission is AC
+	triedMark  = "✗" // submitted, never AC
+)
+
+// solveStatus maps each submitted problem to solvedMark or triedMark.
+func solveStatus(subs []*submission) map[string]string {
+	st := map[string]string{}
+	for _, s := range subs {
+		if s.Report.Verdict == judge.AC {
+			st[s.Problem] = solvedMark
+		} else if st[s.Problem] == "" {
+			st[s.Problem] = triedMark
+		}
+	}
+	return st
 }
 
 // problemNumber returns the leading digits of id ("0001-a-plus-b" → "0001"), or id if none.
