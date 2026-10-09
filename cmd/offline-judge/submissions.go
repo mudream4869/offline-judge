@@ -107,7 +107,7 @@ func submissionList(p *tgframe.Params, subs []*submission) *submission {
 			}
 			id := strconv.Itoa(s.ID)
 			row := []string{"#" + id, s.At.Format("2006-01-02 15:04:05"), title, ver,
-				langByID(s.Lang).name, string(s.Report.Verdict), t}
+				langByID(s.Lang).name, resultText(&s.Report), t}
 			if q != "" && !strings.Contains(strings.ToLower(strings.Join(row, "\x00")+"\x00"+s.Problem), q) {
 				continue
 			}

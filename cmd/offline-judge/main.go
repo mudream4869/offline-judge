@@ -268,14 +268,22 @@ const (
 	triedMark  = "未通過" // submitted, never AC
 )
 
-// solveStatus maps each submitted problem to solvedMark or triedMark.
+// solveStatus maps each submitted problem to solvedMark, or triedMark
+// with the best partial score if any.
 func solveStatus(subs []*submission) map[string]string {
 	st := map[string]string{}
+	best := map[string]float64{}
 	for _, s := range subs {
 		if s.Report.Verdict == judge.AC {
 			st[s.Problem] = solvedMark
 		} else if st[s.Problem] == "" {
 			st[s.Problem] = triedMark
+		}
+		best[s.Problem] = max(best[s.Problem], s.Report.Score)
+	}
+	for p, v := range st {
+		if v == triedMark && best[p] > 0 {
+			st[p] = fmt.Sprintf("%s（最高 %g 分）", triedMark, best[p])
 		}
 	}
 	return st
@@ -516,6 +524,10 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 		tgcomp.Text(out, outLabel)
 		tgcomp.Code(out, c.Output, &tgcomp.CodeConf{Language: "text"})
 	}
+	if len(pr.Subtasks) > 0 {
+		tgcomp.Subtitle(p.Main, "子任務")
+		tgcomp.Markdown(p.Main, subtaskTable(pr.Subtasks))
+	}
 
 	if pr.Hint != "" {
 		h := tgcomp.Expand(p.Main, "提示", false, &tgcomp.ExpandConf{ID: "hint_" + pr.ID})
@@ -560,7 +572,8 @@ func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 		return
 	}
 	if tgcomp.Button(c, "提交", &tgcomp.ButtonConf{ID: "submit_" + key}) {
-		spec := judge.Spec{Limit: pr.TimeLimitFor(lg.id), Interactor: pr.Interactor, Compare: pr.Compare}
+		spec := judge.Spec{Limit: pr.TimeLimitFor(lg.id), Interactor: pr.Interactor,
+			Compare: pr.Compare, Subtasks: pr.JudgeSubtasks()}
 		if pr.Checker != "" {
 			spec.Check = checkRunner().Checker(pr.Checker)
 		}
@@ -615,7 +628,7 @@ func historyPanel(c *tgframe.Container, pr *problems.Problem) {
 	for _, s := range subs {
 		lg := langByID(s.Lang)
 		title := fmt.Sprintf("#%d  %s  %s  %s", s.ID, s.At.Format("2006-01-02 15:04:05"),
-			lg.name, s.Report.Verdict)
+			lg.name, resultText(&s.Report))
 		if s.Report.Verdict != judge.CE {
 			title += "  " + fmtTime(maxTime(&s.Report))
 		}
@@ -664,14 +677,29 @@ func maxTime(rep *judge.Report) time.Duration {
 
 // showReport draws rep; id keeps its components unique on the page.
 func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report, id string) {
-	if rep.Verdict == judge.AC {
-		tgcomp.MessageSuccess(c, "AC：全部通過")
-	} else {
-		tgcomp.MessageDanger(c, string(rep.Verdict)+"："+verdictName(rep.Verdict))
+	score := ""
+	if rep.MaxScore > 0 {
+		score = "（" + scoreText(rep) + "）"
+	}
+	switch {
+	case rep.Verdict == judge.AC:
+		tgcomp.MessageSuccess(c, "AC：全部通過"+score)
+	case rep.Score > 0:
+		tgcomp.MessageWarning(c, string(rep.Verdict)+"："+verdictName(rep.Verdict)+score)
+	default:
+		tgcomp.MessageDanger(c, string(rep.Verdict)+"："+verdictName(rep.Verdict)+score)
 	}
 	if rep.Verdict == judge.CE {
 		tgcomp.Code(c, cut(rep.CompileError), &tgcomp.CodeConf{Language: "text"})
 		return
+	}
+
+	if len(rep.Subtasks) > 0 {
+		rows := make([][]string, len(rep.Subtasks))
+		for i, st := range rep.Subtasks {
+			rows[i] = []string{fmt.Sprint(i + 1), string(st.Verdict), fmt.Sprintf("%g / %g", st.Score, st.Max)}
+		}
+		tgcomp.Table(c, []string{"子任務", "結果", "分數"}, rows)
 	}
 
 	rows := make([][]string, len(rep.Cases))
@@ -964,6 +992,31 @@ func verdictName(v judge.Verdict) string {
 		return "編譯錯誤"
 	}
 	return ""
+}
+
+// scoreText is rep's score, e.g. "40 / 100 分".
+func scoreText(rep *judge.Report) string {
+	return fmt.Sprintf("%g / %g 分", rep.Score, rep.MaxScore)
+}
+
+// resultText is rep's verdict, with the score if the problem has subtasks.
+func resultText(rep *judge.Report) string {
+	if rep.MaxScore == 0 {
+		return string(rep.Verdict)
+	}
+	return string(rep.Verdict) + "（" + scoreText(rep) + "）"
+}
+
+// subtaskTable is a markdown table of subs, so constraints can hold LaTeX.
+func subtaskTable(subs []problems.Subtask) string {
+	cell := strings.NewReplacer("|", "\\|", "\n", " ")
+	var b strings.Builder
+	b.WriteString("| 子任務 | 分數 | 測資 | 限制 |\n| --- | --- | --- | --- |\n")
+	for i, st := range subs {
+		fmt.Fprintf(&b, "| %d | %g | %s | %s |\n", i+1, st.Score,
+			strings.Join(st.Cases, "、"), cell.Replace(st.Constraints))
+	}
+	return b.String()
 }
 
 func fmtTime(d time.Duration) string {
