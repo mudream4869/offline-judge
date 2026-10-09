@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/mudream4869/offline-judge/internal/judge"
 )
 
 // langIDs are the language ids of cmd/offline-judge.
@@ -60,7 +58,7 @@ func TestAll(t *testing.T) {
 				t.Errorf("%s/%s: empty output", p.ID, c.Name)
 			}
 			// Sanity: an output always matches itself.
-			if !judge.Equal(c.Output, c.Output) {
+			if ok, _ := p.Compare.Check(c.Output, c.Output); !ok {
 				t.Errorf("%s/%s: output does not match itself", p.ID, c.Name)
 			}
 		}
@@ -235,5 +233,18 @@ func TestTimeLimitFor(t *testing.T) {
 		if got := p.TimeLimitFor(lang); got != want {
 			t.Errorf("TimeLimitFor(%q) = %v, want %v", lang, got, want)
 		}
+	}
+}
+
+func TestParseMetaCompare(t *testing.T) {
+	m, err := ParseMeta([]byte(`{"title": "x", "compare": "float-diff absolute 1e-4"}`))
+	if err != nil || m.Compare.String() != "float-diff absolute 0.0001" {
+		t.Errorf("ParseMeta = %v, %v", m.Compare, err)
+	}
+	if _, err := ParseMeta([]byte(`{"title": "x", "compare": "nope"}`)); err == nil {
+		t.Error("ParseMeta accepted an unknown compare")
+	}
+	if _, err := ParseList([]byte(`[{"id": "a", "title": "x", "compare": "nope"}]`)); err == nil {
+		t.Error("ParseList accepted an unknown compare")
 	}
 }

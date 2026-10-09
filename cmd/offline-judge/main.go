@@ -500,6 +500,9 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	if pr.Interactor != "" {
 		tgcomp.Caption(p.Main, "互動題：程式與題目的互動程式一問一答")
 	}
+	if c := compareCaption(pr.Compare); c != "" {
+		tgcomp.Caption(p.Main, c)
+	}
 
 	inLabel, outLabel := "輸入", "輸出"
 	if pr.Interactor != "" {
@@ -557,7 +560,7 @@ func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 		return
 	}
 	if tgcomp.Button(c, "提交", &tgcomp.ButtonConf{ID: "submit_" + key}) {
-		spec := judge.Spec{Limit: pr.TimeLimitFor(lg.id), Interactor: pr.Interactor}
+		spec := judge.Spec{Limit: pr.TimeLimitFor(lg.id), Interactor: pr.Interactor, Compare: pr.Compare}
 		if pr.Checker != "" {
 			spec.Check = checkRunner().Checker(pr.Checker)
 		}
@@ -714,10 +717,13 @@ func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report, i
 			tgcomp.Code(box, cut(cr.Stdout), &tgcomp.CodeConf{Language: "text"})
 		}
 		if cr.Message != "" {
-			if interactive {
+			switch {
+			case interactive:
 				tgcomp.Text(box, "互動程式訊息")
-			} else {
+			case pr.Checker != "":
 				tgcomp.Text(box, "checker 訊息")
+			default:
+				tgcomp.Text(box, "比對結果")
 			}
 			tgcomp.Code(box, cr.Message, &tgcomp.CodeConf{Language: "text"})
 		}
@@ -780,6 +786,26 @@ func customPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 		tgcomp.Text(c, "stderr")
 		tgcomp.Code(c, cut(res.Stderr), &tgcomp.CodeConf{Language: "text"})
 	}
+}
+
+// compareCaption explains a comparison other than the default, or returns "".
+func compareCaption(cm judge.Compare) string {
+	switch cm.Mode {
+	case judge.CompareStrict:
+		return "輸出要逐字元相同，包含空白與換行"
+	case judge.CompareWhite:
+		return "以空白分隔逐項比對，空白的數量不影響判定，但換行要相同"
+	case judge.CompareFloat:
+		err := "絕對或相對誤差"
+		switch {
+		case !cm.Rel:
+			err = "絕對誤差"
+		case !cm.Abs:
+			err = "相對誤差"
+		}
+		return fmt.Sprintf("輸出的小數與答案的%s在 %g 以內即可，其他項要相同", err, cm.Eps)
+	}
+	return ""
 }
 
 // stdoutLabel names a run's Stdout, which is a transcript for an interactive problem.

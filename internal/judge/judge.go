@@ -5,7 +5,6 @@ package judge
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 )
 
@@ -95,7 +94,9 @@ type Report struct {
 // Spec is how a problem is judged.
 type Spec struct {
 	Limit time.Duration
-	Check Checker // compares outputs; nil means Equal
+	Check Checker // compares outputs; nil means Compare
+	// Compare is the built-in comparison used without Check.
+	Compare Compare
 	// Interactor is interactor.js for an interactive problem: it talks to
 	// the program, with each case's Input as its input, and gives the verdict.
 	Interactor string
@@ -110,7 +111,8 @@ func Judge(ctx context.Context, r Runner, code string, cases []Case,
 	limit, check := spec.Limit, spec.Check
 	if check == nil {
 		check = func(_ context.Context, c Case, out string) (bool, string, error) {
-			return Equal(out, c.Output), "", nil
+			ok, msg := spec.Compare.Check(out, c.Output)
+			return ok, msg, nil
 		}
 	}
 
@@ -176,17 +178,6 @@ func Judge(ctx context.Context, r Runner, code string, cases []Case,
 
 // Equal compares outputs ignoring trailing spaces and trailing blank lines.
 func Equal(got, want string) bool {
-	return normalize(got) == normalize(want)
-}
-
-func normalize(s string) string {
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		lines[i] = strings.TrimRight(l, " \t\r")
-	}
-	for len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	return strings.Join(lines, "\n")
+	ok, _ := checkLines(got, want)
+	return ok
 }

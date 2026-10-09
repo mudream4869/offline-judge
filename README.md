@@ -50,8 +50,8 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 
 | 結果 | 條件 |
 | --- | --- |
-| AC | 輸出相符（忽略行尾空白與結尾空行）；有 checker 的題目則由 checker 判定，互動題由互動程式判定 |
-| WA | 輸出不符，或 checker / 互動程式不接受（互動題先於 RE：被互動程式切斷的程式常常接著出錯） |
+| AC | 輸出相符（預設忽略行尾空白與結尾空行，可用 `compare` 改變）；有 checker 的題目則由 checker 判定，互動題由互動程式判定 |
+| WA | 輸出不符（會指出第一個不同的位置），或 checker / 互動程式不接受（互動題先於 RE：被互動程式切斷的程式常常接著出錯） |
 | CE | 編譯錯誤（C++、Go），不執行任何測資 |
 | RE | 例外、非零 `SystemExit` 或非零 exit code（含 `process.exit`） |
 | TLE | 耗時超過限制；超過限制 +1 秒仍未結束就砍掉 worker |
@@ -133,7 +133,7 @@ problems/0004-xxx/
   tests/
     sample1.in / sample1.out   sample 開頭的會顯示在題目裡
     01.in / 01.out
-  checker.js      選填，答案不唯一時用（見下方）
+  checker.js      選填，答案不唯一時用（見下方）；浮點數誤差等只要設 problem.json 的 compare
   interactor.js   選填，互動題用（見下方）；與 checker.js 擇一
   solution.py     互動題必填的參考解，只給 go test 用
 ```
@@ -154,6 +154,17 @@ go test ./problems -update   # 從每題的 problem.json 重新產生 problems.j
 `solution_tags` 選填，放會暗示解法的標籤（例如「線段樹」、「二分搜尋」），不要跟 `tags` 重複。
 預設只在題目頁收合顯示；「設定」勾選「顯示解法標籤」後，才會跟 `tags` 一起顯示在列表與題目頁，也能用來篩選。
 這個 repo 的題目 `tags` 與 `solution_tags` 至少要有一個（`go test` 會檢查）。
+
+`compare` 選填，內建的輸出比對方式（參考 TIOJ），不用寫 checker：
+
+| `compare` | 比對方式 |
+| --- | --- |
+| `line`（預設） | 逐行比對，忽略行尾空白與結尾空行 |
+| `strict` | 逐位元組比對 |
+| `white-diff` | 逐行比對，每行以空白分隔成項，空白的數量不影響；忽略結尾空行 |
+| `float-diff [absolute\|relative\|absolute-relative] [誤差]` | 同 `white-diff`，但答案中含 `.`、`e` 或 `E` 的數字允許誤差（預設 `absolute-relative 1e-6`，絕對或相對誤差其一在範圍內即可）；整數仍要相同 |
+
+WA 時會在「比對結果」指出第一個不同的行與項。有 `checker.js` 或 `interactor.js` 時不能設定 `compare`。
 
 `problems.json` 沒更新、或 `version` 格式不對的話 `go test` 會失敗。其他來源也要在資料夾根目錄放 `problems.json`：
 
