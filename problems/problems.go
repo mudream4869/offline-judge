@@ -4,7 +4,8 @@
 //
 //	problems.json       every problem.json in one list, made by MakeList
 //	<id>/problem.json   {"title": "...", "time_limit_ms": 1000, "time_limits_ms": {"cpp": 500},
-//	                     "version": "2026-10-08 15:04:05", "tags": ["..."]}
+//	                     "version": "2026-10-08 15:04:05", "tags": ["..."],
+//	                     "solution_tags": ["..."]}
 //	<id>/statement.md   a "## 提示" section becomes Hint
 //	<id>/checker.js     optional; judges outputs instead of an exact match
 //	<id>/interactor.js  optional; makes the problem interactive, .out optional
@@ -35,8 +36,10 @@ type Problem struct {
 	TimeLimits map[string]time.Duration
 	Version    string // date of the last change, e.g. "2026-10-08 15:04:05"; may be empty
 	Tags       []string
-	Cases      []judge.Case
-	Checker    string // checker.js source; empty for an exact match
+	// SolutionTags hint at the solution, so they are hidden by default.
+	SolutionTags []string
+	Cases        []judge.Case
+	Checker      string // checker.js source; empty for an exact match
 	// Interactor is interactor.js source; empty unless interactive. Then
 	// each case's Input is the interactor's input.
 	Interactor string
@@ -68,6 +71,8 @@ type Meta struct {
 	TimeLimits map[string]time.Duration
 	Version    string
 	Tags       []string
+	// SolutionTags hint at the solution, so they are hidden by default.
+	SolutionTags []string
 }
 
 type meta struct {
@@ -76,6 +81,7 @@ type meta struct {
 	TimeLimitsMS map[string]int `json:"time_limits_ms,omitempty"`
 	Version      string         `json:"version,omitempty"`
 	Tags         []string       `json:"tags,omitempty"`
+	SolutionTags []string       `json:"solution_tags,omitempty"`
 }
 
 // ParseMeta parses problem.json.
@@ -102,11 +108,12 @@ func (m meta) parse() Meta {
 		limits[lang] = time.Duration(ms) * time.Millisecond
 	}
 	return Meta{
-		Title:      m.Title,
-		TimeLimit:  time.Duration(m.TimeLimitMS) * time.Millisecond,
-		TimeLimits: limits,
-		Version:    m.Version,
-		Tags:       m.Tags,
+		Title:        m.Title,
+		TimeLimit:    time.Duration(m.TimeLimitMS) * time.Millisecond,
+		TimeLimits:   limits,
+		Version:      m.Version,
+		Tags:         m.Tags,
+		SolutionTags: m.SolutionTags,
 	}
 }
 
@@ -234,17 +241,18 @@ func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 
 	stmt, hint := splitHint(string(st))
 	return &Problem{
-		ID:         id,
-		Title:      m.Title,
-		Statement:  stmt,
-		Hint:       hint,
-		TimeLimit:  m.TimeLimit,
-		TimeLimits: m.TimeLimits,
-		Version:    m.Version,
-		Tags:       m.Tags,
-		Cases:      cases,
-		Checker:    checker,
-		Interactor: interactor,
+		ID:           id,
+		Title:        m.Title,
+		Statement:    stmt,
+		Hint:         hint,
+		TimeLimit:    m.TimeLimit,
+		TimeLimits:   m.TimeLimits,
+		Version:      m.Version,
+		Tags:         m.Tags,
+		SolutionTags: m.SolutionTags,
+		Cases:        cases,
+		Checker:      checker,
+		Interactor:   interactor,
 	}, nil
 }
 
