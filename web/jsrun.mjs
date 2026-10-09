@@ -2,7 +2,7 @@
 // ('fs', 'readline'), process.stdin/stdout, console. One worker per run
 // (fatal: true), so globals don't leak between runs.
 //
-// in:  {id, code, stdin, outputLimit?}
+// in:  {id, code, stdin, outputLimit?}  (outputLimit: stdout + stderr)
 // out: {type: "ready"}
 //      {type: "result", id, status: "ok"|"re"|"ole", stdout, stderr, ms, fatal}
 
@@ -104,7 +104,8 @@ class OutputLimit {}
 
 self.onmessage = async ({ data: { id, code, stdin, outputLimit = Infinity } }) => {
   const out = []
-  let outSize = 0 // UTF-16 code units, close enough to bytes for a limit
+  // stdout + stderr written, in UTF-16 code units: close enough to bytes for a limit
+  let outSize = 0
   const err = []
   let done = false
   let t0 = 0
@@ -118,15 +119,17 @@ self.onmessage = async ({ data: { id, code, stdin, outputLimit = Infinity } }) =
       ms: performance.now() - t0, fatal: true,
     })
   }
-  // put appends s to stdout, ending the run past the output limit.
-  const put = (s) => {
+  // put appends s to buf (stdout or stderr), ending the run past the output limit.
+  const put = (buf, s) => {
     outSize += s.length
     if (outSize > outputLimit) {
       finish('ole')
       throw new OutputLimit()
     }
-    out.push(s)
+    buf.push(s)
   }
+  const putOut = (s) => put(out, s)
+  const putErr = (s) => put(err, s)
   const fail = (e) => {
     if (e instanceof ExitSignal) {
       finish(e.code ? 're' : 'ok', e.code ? `\nexit code ${e.code}\n` : '')
@@ -201,8 +204,8 @@ self.onmessage = async ({ data: { id, code, stdin, outputLimit = Infinity } }) =
   let exitCode = 0
   const process = {
     stdin: pstdin,
-    stdout: writer(put),
-    stderr: writer((s) => err.push(s)),
+    stdout: writer(putOut),
+    stderr: writer(putErr),
     argv: ['node', '/main.js'],
     env: {},
     platform: 'linux',
@@ -235,8 +238,8 @@ self.onmessage = async ({ data: { id, code, stdin, outputLimit = Infinity } }) =
     },
     writeSync(fd, s) {
       const t = typeof s === 'string' ? s : dec.decode(s)
-      if (fd === 2) err.push(t)
-      else put(t)
+      if (fd === 2) putErr(t)
+      else putOut(t)
     },
   }
 
@@ -281,8 +284,8 @@ self.onmessage = async ({ data: { id, code, stdin, outputLimit = Infinity } }) =
     return m
   }
 
-  const log = (...a) => { put(format(a) + '\n') }
-  const elog = (...a) => { err.push(format(a) + '\n') }
+  const log = (...a) => { putOut(format(a) + '\n') }
+  const elog = (...a) => { putErr(format(a) + '\n') }
   self.console = { log, info: log, debug: log, error: elog, warn: elog, trace: elog }
   self.process = process
   self.require = require
