@@ -127,7 +127,8 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 
 ```
 problems/0004-xxx/
-  problem.json    {"title": "...", "time_limit_ms": 1000, "version": "2026-10-08 15:04:05", "tags": ["入門"]}
+  problem.json    {"title": "...", "time_limit_ms": 1000, "version": "2026-10-08 15:04:05", "tags": ["入門"],
+                  "solution_tags": ["動態規劃"]}
   statement.md    題目敘述（Markdown，`$...$` / `$$...$$` 為 LaTeX 公式）；「## 提示」段落會收合顯示
   tests/
     sample1.in / sample1.out   sample 開頭的會顯示在題目裡
@@ -149,6 +150,10 @@ go test ./problems -update   # 從每題的 problem.json 重新產生 problems.j
 題目頁顯示目前語言的時限，題目列表顯示 `time_limit_ms` 與有覆寫的語言，例如 `2000 ms（C++ 500 ms、JavaScript 1000 ms）`。
 
 `tags` 選填，會顯示在題目列表與題目頁，列表可依標籤篩選（選多個時只列出同時有這些標籤的題目）。
+
+`solution_tags` 選填，放會暗示解法的標籤（例如「線段樹」、「二分搜尋」），不要跟 `tags` 重複。
+預設只在題目頁收合顯示；「設定」勾選「顯示解法標籤」後，才會跟 `tags` 一起顯示在列表與題目頁，也能用來篩選。
+這個 repo 的題目 `tags` 與 `solution_tags` 至少要有一個（`go test` 會檢查）。
 
 `compare` 選填，內建的輸出比對方式（參考 TIOJ），不用寫 checker：
 

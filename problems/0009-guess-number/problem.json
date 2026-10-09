@@ -3,7 +3,9 @@
   "time_limit_ms": 1000,
   "version": "2026-10-08 16:08:31",
   "tags": [
-    "互動",
+    "互動"
+  ],
+  "solution_tags": [
     "二分搜尋"
   ]
 }
