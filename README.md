@@ -33,9 +33,9 @@ sandbox.mjs：跑題目附的 JS（checker.js、interactor.js）用，先拿掉�
 執行用的 worker 介面為：
 
 ```
-in:  {id, code, stdin, interactor?}   （wasirun.mjs 是 {id, module, stdin, interactor?}）
+in:  {id, code, stdin, interactor?, outputLimit?}   （wasirun.mjs 是 {id, module, stdin, interactor?, outputLimit?}）
 out: {type: "ready"} | {type: "error", error}
-     {type: "result", id, status: "ok"|"re", stdout, stderr, ms, fatal, judged?, iaError?}
+     {type: "result", id, status: "ok"|"re"|"ole", stdout, stderr, ms, fatal, judged?, iaError?}
 ```
 
 有 `interactor`（互動題）時 `stdin` 是互動程式的輸入，`stdout` 是互動過程，
@@ -55,6 +55,7 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 | CE | 編譯錯誤（C++、Go），不執行任何測資 |
 | RE | 例外、非零 `SystemExit` 或非零 exit code（含 `process.exit`） |
 | TLE | 耗時超過限制；超過限制 +1 秒仍未結束就砍掉 worker |
+| OLE | stdout 加 stderr 超過 16 MB（JavaScript 以字元數計），立即停止程式；不影響後面的測資 |
 | SKIP | 第一筆 TLE 之後的測資不再執行（每次 TLE 都要重載 Pyodide）；有子任務時改為跳過所屬子任務都已失敗的測資 |
 
 有子任務的題目另外計分：子任務的測資全部 AC 才拿到該子任務的分數，總分為各子任務分數相加。
@@ -97,6 +98,7 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 - 編譯參數：`-std=c++17 -O2`，stack 64 MB
 - `<bits/stdc++.h>` 是自己寫的（`web/stdc++.h`），只含常用標頭；在 build 時預先編成 PCH，
   有 include 它的程式才會用到
+- `cin >>` 讀數字很慢，約為 `scanf` 的 1/40（libc++ 的解析本身慢，跟 I/O 無關）；輸入大的題目時限要算進去
 - wasi 版 libc++ 不支援例外：`throw` 直接 abort 判 RE，`catch` 不會被執行
 - 執行速度約為原生的 1/3（時間限制可依語言調整，見「新增題目」的 `time_limits_ms`）
 - 第一次選 C++ 時才下載 clang（gzip 後約 27 MB）加上 PCH（約 10 MB）；編譯一次約 1 秒
@@ -151,12 +153,12 @@ go test ./problems -update   # 從每題的 problem.json 重新產生 problems.j
 提交紀錄會記下評測時的版本，版本不同時標示「舊版」，並可在「紀錄」或提交紀錄頁按「用目前版本重新評測」，結果存成新的一筆。
 
 `time_limits_ms` 選填，依語言（`py`、`cpp`、`js`、`go`）覆寫 `time_limit_ms`，沒列出的語言用 `time_limit_ms`。
-只在其他語言用錯的複雜度也能過時才需要，例如 `0006-rmq` 的 `{"cpp": 500, "js": 1000}`。
-題目頁顯示目前語言的時限，題目列表顯示 `time_limit_ms` 與有覆寫的語言，例如 `2000 ms（C++ 500 ms、JavaScript 1000 ms）`。
+只在其他語言用錯的複雜度也能過時才需要，例如 `0006-rmq` 的 `{"py": 6000, "js": 1000}`。
+題目頁顯示目前語言的時限，題目列表顯示 `time_limit_ms` 與有覆寫的語言，例如 `4000 ms（Python 6000 ms、JavaScript 1000 ms）`。
 
 `tags` 選填，會顯示在題目列表與題目頁，列表可依標籤篩選（選多個時只列出同時有這些標籤的題目）。
 
-`solution_tags` 選填，放會暗示解法的標籤（例如「線段樹」、「二分搜尋」），不要跟 `tags` 重複。
+`tags` 只放不暴雷的題目性質（例如「入門」、「互動」、「多解」）；`solution_tags` 選填，放會暗示解法或領域的標籤（例如「取模」、「數論」、「資料結構」、「線段樹」），不要跟 `tags` 重複。
 預設只在題目頁收合顯示；「設定」勾選「顯示解法標籤」後，才會跟 `tags` 一起顯示在列表與題目頁，也能用來篩選。
 這個 repo 的題目 `tags` 與 `solution_tags` 至少要有一個（`go test` 會檢查）。
 

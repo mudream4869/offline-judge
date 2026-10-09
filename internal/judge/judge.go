@@ -18,6 +18,7 @@ const (
 	TLE Verdict = "TLE"
 	RE  Verdict = "RE"
 	CE  Verdict = "CE"
+	OLE Verdict = "OLE"
 	// Skip marks cases not run: after a TLE, since each TLE costs a runtime
 	// restart; with subtasks, ones whose subtasks have all failed.
 	Skip Verdict = "SKIP"
@@ -30,6 +31,8 @@ const (
 	RunOK      RunStatus = "ok"
 	RunError   RunStatus = "re"
 	RunTimeout RunStatus = "tle"
+	// RunOutputLimit: the program was stopped for writing too much.
+	RunOutputLimit RunStatus = "ole"
 	// RunCompileError: Stderr holds the compiler output.
 	RunCompileError RunStatus = "ce"
 )
@@ -179,6 +182,8 @@ func Judge(ctx context.Context, r Runner, code string, cases []Case,
 		switch {
 		case res.Status == RunTimeout || res.Time > limit:
 			cr.Verdict = TLE
+		case res.Status == RunOutputLimit:
+			cr.Verdict = OLE
 		case res.Judged != nil && !res.Judged.OK:
 			// Before RE: a program cut off by the interactor often crashes.
 			cr.Verdict, cr.Message = WA, res.Judged.Message

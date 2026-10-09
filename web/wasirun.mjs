@@ -1,9 +1,9 @@
 // Runs a compiled WASI module (C++, Go). Cheap to start, so the Go side
 // kills it on timeout and uses a spare.
 //
-// in:  {id, module, stdin, interactor?}
+// in:  {id, module, stdin, interactor?, outputLimit?}  (outputLimit: stdout + stderr bytes)
 // out: {type: "ready"}
-//      {type: "result", id, status: "ok"|"re", stdout, stderr, ms, fatal,
+//      {type: "result", id, status: "ok"|"re"|"ole", stdout, stderr, ms, fatal,
 //       judged?, iaError?}
 //
 // With interactor (interactor.js source), stdin is its input and the
@@ -14,11 +14,23 @@ import { lockdown, importDefault, Interaction, interactionResult } from './sandb
 
 const enc = new TextEncoder()
 
-function collector() {
+// collector keeps what is written. budget ({left, over}) is shared by
+// stdout and stderr; once it runs out, over is set and the write throws,
+// which unwinds the program.
+function collector(budget) {
   const parts = []
   let taken = 0
   const dec = new TextDecoder()
-  const fd = new ConsoleStdout((b) => parts.push(b.slice()))
+  const fd = new ConsoleStdout((b) => {
+    if (budget.over || b.length > budget.left) {
+      budget.over = true
+      throw new Error('output limit exceeded')
+    }
+    budget.left -= b.length
+    parts.push(b.slice())
+  })
+  // note appends the runner's own message, outside the budget.
+  fd.note = (s) => parts.push(enc.encode(s))
   fd.text = () => {
     const d = new TextDecoder()
     return parts.map((b) => d.decode(b, { stream: true })).join('') + d.decode()
@@ -57,9 +69,10 @@ class InteractiveStdin extends Fd {
   }
 }
 
-self.onmessage = async ({ data: { id, module, stdin, interactor } }) => {
-  const out = collector()
-  const err = collector()
+self.onmessage = async ({ data: { id, module, stdin, interactor, outputLimit } }) => {
+  const budget = { left: outputLimit ?? Infinity, over: false }
+  const out = collector(budget)
+  const err = collector(budget)
   let ia = null
   if (interactor) {
     lockdown()
@@ -81,14 +94,15 @@ self.onmessage = async ({ data: { id, module, stdin, interactor } }) => {
     const code = w.start(inst)
     if (code !== 0) {
       status = 're'
-      err.write(enc.encode(`\nexit code ${code}\n`))
+      err.note(`\nexit code ${code}\n`)
     }
   } catch (e) {
     // A trap: abort(), out of bounds, stack overflow, ...
     status = 're'
-    err.write(enc.encode(`\n${e}\n`))
+    if (!budget.over) err.note(`\n${e}\n`)
   }
   let ms = performance.now() - t0
+  if (budget.over) status = 'ole'
   let extra = { stdout: out.text() }
   if (ia) {
     extra = interactionResult(ia, out.take())

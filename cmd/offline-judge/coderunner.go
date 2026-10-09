@@ -27,9 +27,13 @@ func (r *CodeRunner) Run(ctx context.Context, code string, in judge.Input,
 	return r.run(ctx, msg, limit)
 }
 
-// setInput sets the stdin (and interactor) of a worker message.
+// outputLimit is the most stdout a program may write, in bytes.
+const outputLimit = 16 << 20
+
+// setInput sets the stdin (and interactor) and output limit of a worker message.
 func setInput(msg js.Value, in judge.Input) {
 	msg.Set("stdin", in.Stdin)
+	msg.Set("outputLimit", outputLimit)
 	if in.Interactor != "" {
 		msg.Set("interactor", in.Interactor)
 	}
