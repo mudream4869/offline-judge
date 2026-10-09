@@ -4,7 +4,8 @@
 //
 //	problems.json       every problem.json in one list, made by MakeList
 //	<id>/problem.json   {"title": "...", "time_limit_ms": 1000, "time_limits_ms": {"cpp": 500},
-//	                     "version": "2026-10-08 15:04:05", "tags": ["..."]}
+//	                     "version": "2026-10-08 15:04:05", "tags": ["..."],
+//	                     "compare": "float-diff 1e-6"}
 //	<id>/statement.md   a "## 提示" section becomes Hint
 //	<id>/checker.js     optional; judges outputs instead of an exact match
 //	<id>/interactor.js  optional; makes the problem interactive, .out optional
@@ -36,7 +37,8 @@ type Problem struct {
 	Version    string // date of the last change, e.g. "2026-10-08 15:04:05"; may be empty
 	Tags       []string
 	Cases      []judge.Case
-	Checker    string // checker.js source; empty for an exact match
+	Compare    judge.Compare // built-in comparison, used without Checker
+	Checker    string        // checker.js source; empty for Compare
 	// Interactor is interactor.js source; empty unless interactive. Then
 	// each case's Input is the interactor's input.
 	Interactor string
@@ -68,6 +70,7 @@ type Meta struct {
 	TimeLimits map[string]time.Duration
 	Version    string
 	Tags       []string
+	Compare    judge.Compare
 }
 
 type meta struct {
@@ -76,6 +79,7 @@ type meta struct {
 	TimeLimitsMS map[string]int `json:"time_limits_ms,omitempty"`
 	Version      string         `json:"version,omitempty"`
 	Tags         []string       `json:"tags,omitempty"`
+	Compare      string         `json:"compare,omitempty"`
 }
 
 // ParseMeta parses problem.json.
@@ -84,10 +88,10 @@ func ParseMeta(bs []byte) (Meta, error) {
 	if err := json.Unmarshal(bs, &m); err != nil {
 		return Meta{}, err
 	}
-	return m.parse(), nil
+	return m.parse()
 }
 
-func (m meta) parse() Meta {
+func (m meta) parse() (Meta, error) {
 	if m.TimeLimitMS <= 0 {
 		m.TimeLimitMS = 1000
 	}
@@ -101,13 +105,18 @@ func (m meta) parse() Meta {
 		}
 		limits[lang] = time.Duration(ms) * time.Millisecond
 	}
+	cmp, err := judge.ParseCompare(m.Compare)
+	if err != nil {
+		return Meta{}, err
+	}
 	return Meta{
 		Title:      m.Title,
 		TimeLimit:  time.Duration(m.TimeLimitMS) * time.Millisecond,
 		TimeLimits: limits,
 		Version:    m.Version,
 		Tags:       m.Tags,
-	}
+		Compare:    cmp,
+	}, nil
 }
 
 // Entry is a problem in problems.json.
@@ -140,6 +149,9 @@ func MakeList(fsys fs.FS) ([]byte, error) {
 		if err := json.Unmarshal(bs, &m); err != nil {
 			return nil, fmt.Errorf("%s/problem.json: %w", d.Name(), err)
 		}
+		if _, err := m.parse(); err != nil {
+			return nil, fmt.Errorf("%s/problem.json: %w", d.Name(), err)
+		}
 		list = append(list, entry{ID: d.Name(), meta: m})
 	}
 	bs, err := json.MarshalIndent(list, "", "  ")
@@ -160,7 +172,11 @@ func ParseList(bs []byte) ([]Entry, error) {
 		if e.ID == "" || strings.Contains(e.ID, "/") {
 			return nil, fmt.Errorf("題目 id 有誤：%q", e.ID)
 		}
-		out[i] = Entry{ID: e.ID, Meta: e.meta.parse()}
+		m, err := e.meta.parse()
+		if err != nil {
+			return nil, fmt.Errorf("題目 %s：%w", e.ID, err)
+		}
+		out[i] = Entry{ID: e.ID, Meta: m}
 	}
 	return out, nil
 }
@@ -226,6 +242,9 @@ func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 	if checker != "" && interactor != "" {
 		return nil, fmt.Errorf("%s 與 %s 只能有一個", CheckerFile, InteractorFile)
 	}
+	if !m.Compare.IsDefault() && (checker != "" || interactor != "") {
+		return nil, fmt.Errorf("有 %s 或 %s 時不能設定 compare", CheckerFile, InteractorFile)
+	}
 
 	cases, err := loadCases(fsys, path.Join(id, "tests"), interactor != "")
 	if err != nil {
@@ -243,6 +262,7 @@ func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 		Version:    m.Version,
 		Tags:       m.Tags,
 		Cases:      cases,
+		Compare:    m.Compare,
 		Checker:    checker,
 		Interactor: interactor,
 	}, nil
