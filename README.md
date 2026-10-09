@@ -25,7 +25,7 @@ page ── toolgui worker (Go wasm：UI / 題目 / 比對)
             ├── gocompile.mjs  (Go compile + link：收 code，回 WebAssembly.Module 或編譯錯誤；常駐)
             ├── wasirun.mjs    (C++、Go 共用：收 module + stdin，回 stdout / stderr / 耗時)
             ├── jsrun.mjs      (收 code + stdin，回 stdout / stderr / 耗時；每次執行換新的 worker)
-            └── checker.mjs    (跑題目的 checker.js，回 AC / WA 與訊息)
+            └── checker.mjs    (轉送給 data: URL worker 裡的 checkbox.mjs，跑題目的 checker.js，回 AC / WA 與訊息)
 
 sandbox.mjs：跑題目附的 JS（checker.js、interactor.js）用，先拿掉儲存與網路 API
 ```
@@ -205,8 +205,8 @@ export default function check(input, output, answer) {
 
 - 選手 TLE / RE 時不會呼叫 checker
 - 在獨立的 worker 執行，每次 5 秒上限；丟例外、逾時或回傳其他型別都算評測失敗
-- 執行前先拿掉 IndexedDB、fetch、Worker 等 API，盡量讓第三方來源的 checker 碰不到使用者的資料；
-  module 的 `import` 仍可連網，所以只能算盡力而為
+- 跑在 `data:` URL 的 worker 裡，origin 是不透明的，瀏覽器不讓它碰這個網站的 IndexedDB、Cache Storage 與 OPFS；
+  另外也拿掉 fetch、Worker 等 API。module 的 `import` 仍可連網，但 checker 只拿得到測資與選手輸出
 - `go test ./problems` 會用 Node 確認每題的 `.out` 都能通過自己的 checker
 
 ### 互動題
@@ -232,7 +232,7 @@ export default function interact(input) {
 - 互動過程以 `→`（程式輸出）、`←`（互動程式回答）記錄，失敗時顯示在測資下
 - Python 與 C++ 的輸出不 flush 也送得到（C++ 的 stdout 是 line buffered）；Go 直接寫 `os.Stdout` 也是，
   但用 `bufio.Writer`（範本預設）時要在讀之前 `Flush()`。JavaScript 尚未支援
-- 跟 checker 一樣先拿掉儲存與網路 API；丟例外算評測失敗
+- 跟 checker 一樣先拿掉儲存與網路 API，但跟選手程式在同一個 worker、與網站同 origin，只能算盡力而為；丟例外算評測失敗
 - `go test ./problems` 會用 Node 讓 `solution.py` 跟互動程式對答，所有測資都要通過；
   這裡互動程式在程式輸出完整的一行後就被呼叫，參考解要 `flush=True`
 
