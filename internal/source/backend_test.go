@@ -42,7 +42,8 @@ func TestBackend(t *testing.T) {
 	b := &memBackend{version: "v1", files: map[string][]byte{}}
 	fsys := os.DirFS("../../problems")
 	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !(p == listFile || strings.HasPrefix(p, "0001-a-plus-b/")) {
+		if err != nil || d.IsDir() || !(p == listFile || strings.HasPrefix(p, "0001-a-plus-b/") ||
+			strings.HasPrefix(p, "0011-max-subarray/")) {
 			return err
 		}
 		b.files[p], err = fs.ReadFile(fsys, p)
@@ -66,7 +67,15 @@ func TestBackend(t *testing.T) {
 	if p.Title != "A + B" || len(p.Cases) == 0 {
 		t.Errorf("problem = %+v", p)
 	}
-	// Only what the problem needs, e.g. not problem.json or _solutions.
+	// A function problem brings its graders and templates.
+	fp, err := s.Problem(ctx, "0011-max-subarray")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fp.Graders) != 4 || fp.Templates["go"] == "" {
+		t.Errorf("graders %v, templates %v; want all 4 languages", len(fp.Graders), len(fp.Templates))
+	}
+	// Only what the problems need, e.g. not problem.json or _solutions.
 	for _, f := range b.fetched {
 		if strings.HasSuffix(f, "problem.json") || strings.Contains(f, "_solutions") {
 			t.Errorf("fetched %s", f)

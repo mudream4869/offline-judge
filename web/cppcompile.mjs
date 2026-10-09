@@ -1,7 +1,7 @@
 // Compiles C++ to a WASI module with clang (YoWASP). Long-lived: loading
 // clang is slow, so programs run in wasirun.mjs, which can be killed freely.
 //
-// in:  {id, code}
+// in:  {id, code, grader?}  (grader: grader.cpp, linked with the code)
 // out: {type: "ready"} | {type: "error", error}
 //      {type: "result", id, status: "ok"|"ce", module, stderr, ms}
 
@@ -31,19 +31,27 @@ let runClang = null
 let header = ''
 let pch = null // optional
 
-async function compile(code) {
+async function compile(code, grader) {
   let stderr = ''
   const dec = new TextDecoder()
   const opts = { stderr: (b) => { if (b) stderr += dec.decode(b, { stream: true }) } }
   const bits = { 'stdc++.h': header }
   const args = ['clang++', ...FLAGS, '-Iinc']
-  if (pch && USES_STDCXX.test(code)) {
+  if (pch && (USES_STDCXX.test(code) || USES_STDCXX.test(grader ?? ''))) {
     bits['stdc++.h.pch'] = pch
     args.push('-include-pch', HEADER + '.pch', '-Xclang', '-fno-validate-pch')
   }
-  args.push(...LINK, 'main.cpp', 'eh.cpp', '-o', 'main.wasm')
+  const files = { 'eh.cpp': EH, inc: { bits } }
+  if (grader) {
+    files['solution.cpp'] = code
+    files['grader.cpp'] = grader
+    args.push(...LINK, 'grader.cpp', 'solution.cpp', 'eh.cpp', '-o', 'main.wasm')
+  } else {
+    files['main.cpp'] = code
+    args.push(...LINK, 'main.cpp', 'eh.cpp', '-o', 'main.wasm')
+  }
   try {
-    const out = await runClang(args, { 'main.cpp': code, 'eh.cpp': EH, inc: { bits } }, opts)
+    const out = await runClang(args, files, opts)
     return { module: await WebAssembly.compile(out['main.wasm']), stderr }
   } catch (e) {
     // runClang throws Exit on a non-zero status.
@@ -52,10 +60,10 @@ async function compile(code) {
   }
 }
 
-self.onmessage = async ({ data: { id, code } }) => {
+self.onmessage = async ({ data: { id, code, grader } }) => {
   await ready
   const t0 = performance.now()
-  const { module, stderr } = await compile(code)
+  const { module, stderr } = await compile(code, grader)
   const ms = performance.now() - t0
   self.postMessage({ type: 'result', id, status: module ? 'ok' : 'ce', module, stderr, ms })
 }

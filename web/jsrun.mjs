@@ -2,7 +2,8 @@
 // ('fs', 'readline'), process.stdin/stdout, console. One worker per run
 // (fatal: true), so globals don't leak between runs.
 //
-// in:  {id, code, stdin, outputLimit?}  (outputLimit: stdout + stderr)
+// in:  {id, code, stdin, grader?, outputLimit?}  (outputLimit: stdout + stderr)
+//      With grader, the grader is main and require('./solution') is the code.
 // out: {type: "ready"}
 //      {type: "result", id, status: "ok"|"re"|"ole", stdout, stderr, ms, fatal}
 
@@ -102,7 +103,7 @@ class OutputLimit {}
 
 // ---- run ----
 
-self.onmessage = async ({ data: { id, code, stdin, outputLimit = Infinity } }) => {
+self.onmessage = async ({ data: { id, code, stdin, grader, outputLimit = Infinity } }) => {
   const out = []
   // stdout + stderr written, in UTF-16 code units: close enough to bytes for a limit
   let outSize = 0
@@ -278,7 +279,22 @@ self.onmessage = async ({ data: { id, code, stdin, outputLimit = Infinity } }) =
     os: { EOL: '\n' },
     util: { format: (...a) => format(a), inspect: (v) => inspect(v, 1) },
   }
+  // load runs src as a CommonJS module named file; returns its exports.
+  const load = (src, file) => {
+    // The code starts on line 2; errText shifts line numbers back.
+    const fn = (0, eval)(
+      '(function (exports, require, module, __filename, __dirname) {\n' + src +
+      '\n})\n//# sourceURL=' + file)
+    const module = { exports: {} }
+    fn.call(module.exports, module.exports, require, module, '/' + file, '/')
+    return module.exports
+  }
+  let solution = null
   const require = (name) => {
+    if (grader && /^\.\/solution(\.js)?$/.test(name)) {
+      solution ??= { exports: load(code, 'solution.js') }
+      return solution.exports
+    }
     const m = modules[name.replace(/^node:/, '')]
     if (!m) throw new Error(`Cannot find module '${name}'`)
     return m
@@ -294,12 +310,8 @@ self.onmessage = async ({ data: { id, code, stdin, outputLimit = Infinity } }) =
 
   t0 = performance.now()
   try {
-    // The code starts on line 2; errText shifts line numbers back.
-    const fn = (0, eval)(
-      '(function (exports, require, module, __filename, __dirname) {\n' + code +
-      '\n})\n//# sourceURL=main.js')
-    const module = { exports: {} }
-    fn.call(module.exports, module.exports, require, module, '/main.js', '/')
+    if (grader) load(grader, 'grader.js')
+    else load(code, 'main.js')
     // Event loop: run until no input events or timers are left.
     for (;;) {
       await new Promise((r) => realSetTimeout(r, 0))
@@ -323,11 +335,13 @@ self.onmessage = async ({ data: { id, code, stdin, outputLimit = Infinity } }) =
 function errText(e) {
   if (!(e instanceof Error)) return `Uncaught ${inspect(e, 1)}\n`
   const lines = String(e.stack || e).split('\n')
-  const keep = lines.filter((l, i) => i === 0 || !/^\s+at /.test(l) || l.includes('main.js'))
+  const keep = lines.filter((l, i) => i === 0 || !/^\s+at /.test(l) || OWN.test(l))
   if (!keep[0].includes(e.message)) keep.unshift(String(e))
   return keep.join('\n')
     .replace(/at (Object\.)?eval \(/g, 'at (')
-    .replace(/main\.js:(\d+)/g, (_, n) => `main.js:${n - 1}`) + '\n'
+    .replace(/(main|grader|solution)\.js:(\d+)/g, (_, f, n) => `${f}.js:${n - 1}`) + '\n'
 }
+
+const OWN = /(main|grader|solution)\.js/
 
 self.postMessage({ type: 'ready' })

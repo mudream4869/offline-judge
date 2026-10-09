@@ -2,7 +2,7 @@
 // cmd/link built for wasip1). Long-lived like cppcompile.mjs; programs run in
 // wasirun.mjs.
 //
-// in:  {id, code}
+// in:  {id, code, grader?}  (grader: grader.go, in package main with the code)
 // out: {type: "ready"} | {type: "error", error}
 //      {type: "result", id, status: "ok"|"ce", module, stderr, ms}
 
@@ -38,16 +38,23 @@ function run(mod, args, root, log) {
     .then((inst) => wasi.start(inst))
 }
 
-async function compile(code) {
+async function compile(code, grader) {
   let stderr = ''
   const dec = new TextDecoder()
   const log = (b) => { stderr += dec.decode(b, { stream: true }) }
   const files = new Map(std)
-  files.set('main.go', new File(enc.encode(code)))
+  const srcs = ['main.go']
+  if (grader) {
+    srcs.splice(0, 1, 'grader.go', 'solution.go')
+    files.set('grader.go', new File(enc.encode(grader)))
+    files.set('solution.go', new File(enc.encode(code)))
+  } else {
+    files.set('main.go', new File(enc.encode(code)))
+  }
   const root = new PreopenDirectory('/', files)
   try {
     if (await run(compileMod, ['compile', '-p', 'main', '-complete', '-importcfg', 'importcfg',
-      '-o', 'main.a', '-pack', 'main.go'], root, log) !== 0) {
+      '-o', 'main.a', '-pack', ...srcs], root, log) !== 0) {
       return { module: null, stderr }
     }
     const cfg = dec.decode(std.get('importcfg').data) + 'packagefile main=main.a\n'
@@ -62,10 +69,10 @@ async function compile(code) {
   }
 }
 
-self.onmessage = async ({ data: { id, code } }) => {
+self.onmessage = async ({ data: { id, code, grader } }) => {
   await ready
   const t0 = performance.now()
-  const { module, stderr } = await compile(code)
+  const { module, stderr } = await compile(code, grader)
   const ms = performance.now() - t0
   self.postMessage({ type: 'result', id, status: module ? 'ok' : 'ce', module, stderr, ms })
 }

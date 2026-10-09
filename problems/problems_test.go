@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/mudream4869/offline-judge/internal/judge"
@@ -190,6 +191,64 @@ func TestInteractors(t *testing.T) {
 		if err != nil || len(out) > 0 {
 			t.Errorf("%s: solution fails: %v\n%s", p.ID, err, strings.TrimSpace(string(out)))
 		}
+	}
+}
+
+// TestGraders runs each function problem's _solutions/ac.py with its
+// grader.py, as module solution.
+func TestGraders(t *testing.T) {
+	py, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not found")
+	}
+	ps, err := Load(os.DirFS("."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range ps {
+		if len(p.Graders) == 0 {
+			continue
+		}
+		for _, lang := range Langs {
+			if p.Graders[lang] == "" {
+				t.Errorf("%s: no %s", p.ID, GraderFile(lang))
+			}
+		}
+		sol, err := os.ReadFile(filepath.Join(p.ID, "_solutions", "ac.py"))
+		if err != nil {
+			t.Errorf("%s: function problem without _solutions/ac.py", p.ID)
+			continue
+		}
+		dir := t.TempDir()
+		for name, src := range map[string]string{"solution.py": string(sol), "grader.py": p.Graders["py"]} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, c := range p.Cases {
+			cmd := exec.Command(py, "grader.py")
+			cmd.Dir = dir
+			cmd.Stdin = strings.NewReader(c.Input)
+			out, err := cmd.Output()
+			if ok, msg := p.Compare.Check(string(out), c.Output); err != nil || !ok {
+				t.Errorf("%s/%s: %v %s", p.ID, c.Name, err, msg)
+			}
+		}
+	}
+}
+
+func TestLoadGraders(t *testing.T) {
+	fsys := fstest.MapFS{
+		"p/grader/py/grader.py":   {Data: []byte("import solution")},
+		"p/grader/py/template.py": {Data: []byte("def f(): pass")},
+	}
+	g, tm, err := loadGraders(fsys, "p")
+	if err != nil || g["py"] == "" || tm["py"] == "" || g["cpp"] != "" {
+		t.Errorf("got %v, %v, %v", g, tm, err)
+	}
+	delete(fsys, "p/grader/py/grader.py")
+	if _, _, err := loadGraders(fsys, "p"); err == nil {
+		t.Error("a template without a grader should fail")
 	}
 }
 
