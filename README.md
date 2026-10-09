@@ -269,7 +269,7 @@ export default function interact(input) {
 
 ## 開發
 
-需要 Go 1.27.1+ 與 Node（用 `npm pack` 抓 Pyodide、clang、WASI shim，並用 Node 跑 clang 產生 PCH）。
+需要 Go 1.27.2+ 與 Node（用 `npm pack` 抓 Pyodide、clang、WASI shim，並用 Node 跑 clang 產生 PCH）。
 
 ```sh
 go test ./...
