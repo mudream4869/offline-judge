@@ -184,6 +184,7 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 
 	// Filters sit in the sidebar; both slots clear once a problem is picked.
 	side := tgcomp.Empty(p.Sidebar)
+	showSol := showSolutionTags()
 	var query string
 	var want []string
 	side.With(func(c *tgframe.Container) {
@@ -191,7 +192,7 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 			Base:        tgframe.Base{ID: "problem_search"},
 			Placeholder: "編號或題目",
 		})))
-		if tags := allTags(es); len(tags) > 0 {
+		if tags := allTags(es, showSol); len(tags) > 0 {
 			for _, i := range tgcomp.MultiSelect(c, "標籤", tags, &tgcomp.MultiSelectConf{
 				Base:        tgframe.Base{ID: "problem_tags"},
 				Placeholder: "全部",
@@ -213,7 +214,8 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 		for i := range es {
 			e := &es[i]
 			num := problemNumber(e.ID)
-			if !hasTags(e.Tags, want) ||
+			tags := entryTags(e, showSol)
+			if !hasTags(tags, want) ||
 				!strings.Contains(strings.ToLower(num+" "+e.Title), query) {
 				continue
 			}
@@ -223,7 +225,7 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 			}
 			shown = append(shown, e)
 			ids = append(ids, e.ID)
-			rows = append(rows, []string{num, e.Title, strings.Join(e.Tags, "、"),
+			rows = append(rows, []string{num, e.Title, strings.Join(tags, "、"),
 				fmtLimits(e.TimeLimit, e.TimeLimits), e.Version, off})
 		}
 		if len(rows) == 0 {
@@ -261,13 +263,21 @@ func problemNumber(id string) string {
 }
 
 // allTags returns the tags of es, sorted, without duplicates.
-func allTags(es []source.Entry) []string {
+func allTags(es []source.Entry, showSol bool) []string {
 	var tags []string
-	for _, e := range es {
-		tags = append(tags, e.Tags...)
+	for i := range es {
+		tags = append(tags, entryTags(&es[i], showSol)...)
 	}
 	slices.Sort(tags)
 	return slices.Compact(tags)
+}
+
+// entryTags returns the tags of e, with its solution tags if showSol.
+func entryTags(e *source.Entry, showSol bool) []string {
+	if !showSol {
+		return e.Tags
+	}
+	return append(slices.Clip(e.Tags), e.SolutionTags...)
 }
 
 // hasTags reports whether tags contains every tag in want.
@@ -304,6 +314,13 @@ func Settings(p *tgframe.Params) error {
 		}
 	}
 	tgcomp.Button(p.Main, "還原預設", resetConf)
+
+	tgcomp.Subtitle(p.Main, "顯示")
+	setShowSolutionTags(tgcomp.Checkbox(p.Main, "顯示解法標籤（可能暴雷）", &tgcomp.CheckboxConf{
+		Base:    tgframe.Base{ID: "show_solution_tags"},
+		Default: showSolutionTags(),
+	}))
+	tgcomp.Caption(p.Main, "解法標籤會提示要用的演算法，預設收合；開啟後顯示在題目列表與題目頁，也能用來篩選")
 
 	tgcomp.Subtitle(p.Main, "目前來源")
 	s := openSet(p.Main, p.Context)
@@ -343,6 +360,19 @@ func Settings(p *tgframe.Params) error {
 	tgcomp.Caption(p.Main, fmt.Sprintf("commit %s，上次檢查 %s，共 %d 題，%d 題可離線",
 		s.Commit()[:7], s.Checked().Format("2006-01-02 15:04"), len(es), cached))
 	return nil
+}
+
+// showSolutionTags reports whether solution tags are shown, a setting.
+func showSolutionTags() bool {
+	return memo.getText("show_solution_tags", "") != ""
+}
+
+func setShowSolutionTags(show bool) {
+	v := ""
+	if show {
+		v = "1"
+	}
+	memo.setText("show_solution_tags", v)
 }
 
 const defaultSource = "https://github.com/mudream4869/offline-judge/tree/main/problems"
@@ -428,6 +458,10 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	if len(pr.Tags) > 0 {
 		info += "，標籤：" + strings.Join(pr.Tags, "、")
 	}
+	showSol := showSolutionTags()
+	if showSol && len(pr.SolutionTags) > 0 {
+		info += "，解法標籤：" + strings.Join(pr.SolutionTags, "、")
+	}
 	tgcomp.Caption(p.Main, info)
 	if pr.Checker != "" {
 		tgcomp.Caption(p.Main, "答案不唯一，由題目的 checker 判定；範例輸出只是其中一種")
@@ -452,6 +486,10 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	if pr.Hint != "" {
 		h := tgcomp.Expand(p.Main, "提示", false, &tgcomp.ExpandConf{ID: "hint_" + pr.ID})
 		tgcomp.Markdown(h, pr.Hint)
+	}
+	if !showSol && len(pr.SolutionTags) > 0 {
+		h := tgcomp.Expand(p.Main, "解法標籤（點開會暴雷）", false, &tgcomp.ExpandConf{ID: "soltags_" + pr.ID})
+		tgcomp.Text(h, strings.Join(pr.SolutionTags, "、"))
 	}
 
 	tgcomp.Divider(p.Main)
