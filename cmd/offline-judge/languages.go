@@ -4,7 +4,8 @@ package main
 
 import (
 	"sync"
-	"syscall/js"
+
+	"github.com/voilelab/toolgui/toolgui/tgwasm"
 
 	"github.com/mudream4869/offline-judge/internal/judge"
 )
@@ -94,9 +95,11 @@ func langByID(id string) *lang {
 	return &lang{name: id, id: id}
 }
 
-// assetURL resolves a web/ file against this (Go) worker's script,
-// which toolgui-wasm puts in static/.
+// assetURL returns the URL of a web/ file; names are constants, so an error is a bug.
 func assetURL(name string) string {
-	href := js.Global().Get("location").Get("href")
-	return js.Global().Get("URL").New("../assets/"+name, href).Get("href").String()
+	u, err := tgwasm.AssetURL(name)
+	if err != nil {
+		panic(err)
+	}
+	return u
 }

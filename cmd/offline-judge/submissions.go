@@ -16,129 +16,100 @@ import (
 	"github.com/mudream4869/offline-judge/problems"
 )
 
-const (
-	pickedSubKey = "picked_submission"
-	subQueryKey  = "submission_query"
-	subBackLabel = "← 返回提交紀錄"
-)
-
-var subBackConf = &tgcomp.ButtonConf{ID: "submission_back"}
-
 // Submissions lists the submissions of every problem; picking a row opens it.
 func Submissions(p *tgframe.Params) error {
-	// Before the list, so a cleared pick takes effect this run.
-	if tgcomp.ButtonClicked(p.Main, subBackLabel, subBackConf) {
-		p.State.Delete(pickedSubKey)
+	sub := pickedSubmission(p)
+	if sub == nil {
+		submissionList(p, memo.allSubmissions())
+		return nil
 	}
-	if sub := pickedSubmission(p); sub != nil && tgcomp.ButtonClicked(p.Main, delLabel, delConf(sub.ID)) {
+	if tgcomp.ButtonClicked(p.Main, delLabel, delConf(sub.ID)) {
 		if err := memo.deleteSubmission(sub.ID); err != nil {
 			tgcomp.MessageDanger(p.Main, "刪除失敗："+err.Error())
 		} else {
-			p.State.Delete(pickedSubKey)
+			p.Navigate("submissions", listQuery(p.Query))
+			return nil
 		}
-	}
-
-	subs := memo.allSubmissions()
-	sub := pickedSubmission(p)
-	if sub == nil {
-		sub = submissionList(p, subs)
-	}
-	if sub == nil {
-		return nil
 	}
 	return showSubmission(p, sub)
 }
 
-// pickedSubmission returns the picked submission, if it still exists.
+// pickedSubmission returns the submission the query's id names; if it's
+// gone, it says so and returns nil.
 func pickedSubmission(p *tgframe.Params) *submission {
-	id, ok := p.State.GetNumber[int](pickedSubKey)
-	if !ok {
+	v := p.Query.Get("id")
+	if v == "" {
 		return nil
 	}
-	for _, s := range memo.allSubmissions() {
-		if s.ID == id {
-			return s
+	if id, err := strconv.Atoi(v); err == nil {
+		for _, s := range memo.allSubmissions() {
+			if s.ID == id {
+				return s
+			}
 		}
 	}
+	tgcomp.MessageWarning(p.Main, "找不到提交紀錄："+v)
 	return nil
 }
 
-// submissionList returns the picked submission, or draws the list if there is none.
-func submissionList(p *tgframe.Params, subs []*submission) *submission {
-	// Search sits in the sidebar and is cleared with the list once a row is
-	// picked; the query is kept apart so it comes back with the list.
-	side := tgcomp.Empty(p.Sidebar)
-	var q string
-	if len(subs) > 0 {
-		saved, _ := p.State.Get[string](subQueryKey)
-		side.With(func(c *tgframe.Container) {
-			q = tgcomp.Textbox(c, "搜尋提交紀錄", &tgcomp.TextboxConf{
-				Base:        tgframe.Base{ID: "submission_search"},
-				Placeholder: "編號、題目、語言、結果…",
-				Default:     saved,
-			})
-		})
-		p.State.Set(subQueryKey, q)
+// submissionList draws the list; picking a row opens it. The search is kept
+// in the query, so Back and the back link restore it.
+func submissionList(p *tgframe.Params, subs []*submission) {
+	tgcomp.Title(p.Main, "提交紀錄")
+	if len(subs) == 0 {
+		tgcomp.Caption(p.Main, "還沒有提交紀錄")
+		return
 	}
-	q = strings.ToLower(strings.TrimSpace(q))
-
-	slot := tgcomp.Empty(p.Main)
-	var sel []int
-	slot.With(func(c *tgframe.Container) {
-		tgcomp.Title(c, "提交紀錄")
-		if len(subs) == 0 {
-			tgcomp.Caption(c, "還沒有提交紀錄")
-			return
-		}
-		tgcomp.Caption(c, fmt.Sprintf("共 %d 筆，存在這個瀏覽器裡；點一筆查看程式碼與結果", len(subs)))
-
-		cur := currentEntries(p, c)
-		var shown []*submission
-		var ids []string
-		var rows [][]string
-		for _, s := range subs {
-			t := "-"
-			if s.Report.Verdict != judge.CE {
-				t = fmtTime(maxTime(&s.Report))
-			}
-			title, ver := s.Problem, s.Version
-			if e, ok := cur[s.Problem]; ok {
-				title = e.Title
-				if outdated(s, e.Version) {
-					ver += "（舊版）"
-				}
-			}
-			id := strconv.Itoa(s.ID)
-			row := []string{submissionNumber(s.ID), s.At.Format("2006-01-02 15:04:05"), title, ver,
-				langByID(s.Lang).name, resultText(&s.Report), t}
-			if q != "" && !strings.Contains(strings.ToLower(strings.Join(row, "\x00")+"\x00"+s.Problem), q) {
-				continue
-			}
-			shown = append(shown, s)
-			ids = append(ids, id)
-			rows = append(rows, row)
-		}
-		subs = shown
-		if len(rows) == 0 {
-			tgcomp.Caption(c, "沒有符合搜尋的提交紀錄")
-			return
-		}
-		sel = tgcomp.DataFrame(c, []string{"編號", "時間", "題目", "版本", "語言", "結果", "最長耗時"}, rows,
-			(&tgcomp.DataFrameConf{
-				Base:      tgframe.Base{ID: "submission_list"},
-				PageSize:  50,
-				Selection: tgcomp.SelectionModeSingle,
-				RowKeys:   ids,
-			}).SetSortable(false).SetSearchable(false))
+	search := tgcomp.Textbox(p.Sidebar, "搜尋提交紀錄", &tgcomp.TextboxConf{
+		Base:        tgframe.Base{ID: "submission_search"},
+		Placeholder: "編號、題目、語言、結果…",
+		Default:     p.Query.Get("q"),
 	})
-	if len(sel) == 0 {
-		return nil
+	lq := url.Values{}
+	if search != "" {
+		lq.Set("q", search)
 	}
-	// Clearing drops the list's pick too, so it comes back unpicked.
-	slot.Clear()
-	side.Clear()
-	p.State.Set(pickedSubKey, subs[sel[0]].ID)
-	return subs[sel[0]]
+	p.ReplaceQuery(lq)
+	q := strings.ToLower(strings.TrimSpace(search))
+	tgcomp.Caption(p.Main, fmt.Sprintf("共 %d 筆，存在這個瀏覽器裡；點一筆查看程式碼與結果", len(subs)))
+
+	cur := currentEntries(p, p.Main)
+	var ids []string
+	var rows [][]string
+	for _, s := range subs {
+		t := "-"
+		if s.Report.Verdict != judge.CE {
+			t = fmtTime(maxTime(&s.Report))
+		}
+		title, ver := s.Problem, s.Version
+		if e, ok := cur[s.Problem]; ok {
+			title = e.Title
+			if outdated(s, e.Version) {
+				ver += "（舊版）"
+			}
+		}
+		row := []string{submissionNumber(s.ID), s.At.Format("2006-01-02 15:04:05"), title, ver,
+			langByID(s.Lang).name, resultText(&s.Report), t}
+		if q != "" && !strings.Contains(strings.ToLower(strings.Join(row, "\x00")+"\x00"+s.Problem), q) {
+			continue
+		}
+		ids = append(ids, strconv.Itoa(s.ID))
+		rows = append(rows, row)
+	}
+	if len(rows) == 0 {
+		tgcomp.Caption(p.Main, "沒有符合搜尋的提交紀錄")
+		return
+	}
+	sel := tgcomp.DataFrame(p.Main, []string{"編號", "時間", "題目", "版本", "語言", "結果", "最長耗時"}, rows,
+		(&tgcomp.DataFrameConf{
+			Base:      tgframe.Base{ID: "submission_list"},
+			PageSize:  50,
+			Selection: tgcomp.SelectionModeSingle,
+			RowKeys:   ids,
+		}).SetSortable(false).SetSearchable(false))
+	if len(sel) == 1 {
+		p.Navigate("submissions", pickQuery(lq, ids[sel[0]]))
+	}
 }
 
 // currentEntries maps problem IDs to entries of the current source; empty if
@@ -160,7 +131,7 @@ func currentEntries(p *tgframe.Params, c *tgframe.Container) map[string]source.E
 }
 
 func showSubmission(p *tgframe.Params, sub *submission) error {
-	tgcomp.Button(p.Main, subBackLabel, subBackConf)
+	tgcomp.PageLink(p.Main, "← 返回提交紀錄", "submissions", listQuery(p.Query))
 
 	// Load the problem to show the failed test; it may be gone from the source.
 	var pr *problems.Problem
