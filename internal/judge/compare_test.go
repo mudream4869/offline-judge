@@ -85,3 +85,54 @@ func TestQuoteCuts(t *testing.T) {
 		t.Errorf("quote = %q, want %q", got, want)
 	}
 }
+
+func TestTokensCompare(t *testing.T) {
+	for s, want := range map[string]string{
+		"tokens":                              "tokens",
+		"tokens case_sensitive":               "tokens case_sensitive",
+		"tokens float_tolerance 1e-6":         "tokens float_tolerance 1e-06",
+		"tokens float_absolute_tolerance 0.5": "tokens float_absolute_tolerance 0.5",
+		"tokens float_relative_tolerance 1e-4 case_sensitive space_change_sensitive": "tokens case_sensitive space_change_sensitive float_relative_tolerance 0.0001",
+	} {
+		cm, err := ParseCompare(s)
+		if err != nil || cm.String() != want {
+			t.Errorf("ParseCompare(%q) = %q, %v; want %q", s, cm, err, want)
+		}
+	}
+	for _, s := range []string{"tokens nope", "tokens float_tolerance", "tokens float_tolerance x"} {
+		if _, err := ParseCompare(s); err == nil {
+			t.Errorf("ParseCompare(%q) accepted", s)
+		}
+	}
+
+	tests := []struct {
+		compare   string
+		got, want string
+		ok        bool
+		msg       string
+	}{
+		{"tokens", "1 2\n3", "1\n2   3\n\n", true, ""},
+		{"tokens", "Yes\n", "YES\n", true, ""},
+		{"tokens case_sensitive", "Yes\n", "YES\n", false, `第 1 項不同：預期 "YES"，得到 "Yes"`},
+		{"tokens", "1 2", "1 2 3", false, "輸出有 2 項，預期 3 項"},
+		{"tokens", "0.1000001", "0.1", false, `第 1 項不同：預期 "0.1"，得到 "0.1000001"`},
+		{"tokens float_tolerance 1e-6", "0.1000001 7", "0.1 7", true, ""},
+		{"tokens float_tolerance 1e-6", "0.2", "0.1", false, `第 1 個數字不同：預期 "0.1"，得到 "0.2"`},
+		{"tokens float_absolute_tolerance 1e-6", "1000000.5", "1000000.0", false, `第 1 個數字不同：預期 "1000000.0"，得到 "1000000.5"`},
+		{"tokens float_relative_tolerance 1e-6", "1000000.5", "1000000.0", true, ""},
+		{"tokens float_tolerance 1e-6", "200.0", "200", false, `第 1 項不同：預期 "200"，得到 "200.0"`}, // integers stay exact
+		{"tokens space_change_sensitive", "1 2\n", "1 2\n", true, ""},
+		{"tokens space_change_sensitive", "1  2\n", "1 2\n", false, `第 2 項之前的空白不同：預期 " "，得到 "  "`},
+		{"tokens space_change_sensitive", "1 2", "1 2\n", false, `結尾的空白不同：預期 "\n"，得到 ""`},
+	}
+	for _, tt := range tests {
+		cm, err := ParseCompare(tt.compare)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ok, msg := cm.Check(tt.got, tt.want)
+		if ok != tt.ok || msg != tt.msg {
+			t.Errorf("%q.Check(%q, %q) = %v, %q; want %v, %q", tt.compare, tt.got, tt.want, ok, msg, tt.ok, tt.msg)
+		}
+	}
+}

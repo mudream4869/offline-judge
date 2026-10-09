@@ -47,6 +47,8 @@ type Problem struct {
 	// each case's Input is the interactor's input.
 	Interactor string
 	Subtasks   []Subtask // empty: all or nothing
+	// Unsupported says why the problem can't be judged here; "" if it can.
+	Unsupported string
 }
 
 // Subtask is a scored group of cases.
@@ -94,6 +96,9 @@ type Meta struct {
 	SolutionTags []string
 	Compare      judge.Compare
 	Subtasks     []SubtaskSpec
+	// Unsupported says why the problem can't be judged here; "" if it can.
+	// Not in problem.json: other formats set it.
+	Unsupported string
 }
 
 // SubtaskSpec is a subtask in problem.json.

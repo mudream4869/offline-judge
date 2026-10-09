@@ -144,10 +144,14 @@ func problemList(p *tgframe.Params, es []source.Entry) {
 			off = "✓"
 		}
 		ids = append(ids, e.ID)
+		title := e.Title
+		if e.Unsupported != "" {
+			title += "（無法評測）"
+		}
 		limit := tgcomp.NumberCell(float64(e.TimeLimit.Milliseconds())).
 			WithDisplay(fmtLimits(e.TimeLimit, e.TimeLimits))
 		rows = append(rows, []tgcomp.Cell{tgcomp.TextCell(st), tgcomp.TextCell(num),
-			tgcomp.TextCell(e.Title), tgcomp.TextCell(strings.Join(tags, "、")), limit,
+			tgcomp.TextCell(title), tgcomp.TextCell(strings.Join(tags, "、")), limit,
 			tgcomp.TextCell(e.Version), tgcomp.TextCell(off)})
 	}
 	if len(rows) == 0 {

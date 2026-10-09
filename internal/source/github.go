@@ -91,6 +91,7 @@ func (c *Client) Tree(ctx context.Context, r Repo, commit string) ([]File, error
 		Tree []struct {
 			Path string `json:"path"`
 			Type string `json:"type"`
+			Mode string `json:"mode"`
 			SHA  string `json:"sha"`
 		} `json:"tree"`
 		Truncated bool `json:"truncated"`
@@ -109,7 +110,7 @@ func (c *Client) Tree(ctx context.Context, r Repo, commit string) ([]File, error
 	var out []File
 	for _, e := range t.Tree {
 		if e.Type == "blob" && strings.HasPrefix(e.Path, prefix) {
-			out = append(out, File{Path: e.Path[len(prefix):], SHA: e.SHA})
+			out = append(out, File{Path: e.Path[len(prefix):], SHA: e.SHA, Link: e.Mode == "120000"})
 		}
 	}
 	return out, nil

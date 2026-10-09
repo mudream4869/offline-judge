@@ -21,12 +21,20 @@ type format interface {
 	load(fsys fs.FS, id string, m problems.Meta) (*problems.Problem, error)
 }
 
-// formatOf returns the format of the source listed by ix.
-func formatOf(ix *Index) (format, error) {
+// formatOf returns the format of the source listed by ix; a source that is
+// one Kattis package has the problem id root.
+func formatOf(ix *Index, root string) (format, error) {
 	if _, ok := ix.find(listFile); ok {
 		return native{}, nil
 	}
-	return nil, fmt.Errorf("來源缺少 %s", listFile)
+	if _, ok := ix.find(problems.KattisMetaFile); ok {
+		return kattis{root: root}, nil
+	}
+	if len(kattisIDs(ix)) > 0 {
+		return kattis{}, nil
+	}
+	return nil, fmt.Errorf("來源缺少 %s，也不是 Kattis 題目包（%s 或 <題目>/%s）",
+		listFile, problems.KattisMetaFile, problems.KattisMetaFile)
 }
 
 // listFile lists the problems of a source, so the list is one download.

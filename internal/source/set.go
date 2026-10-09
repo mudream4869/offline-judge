@@ -5,7 +5,10 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	neturl "net/url"
+	"path"
 	"sort"
+	"strings"
 	"sync"
 	"testing/fstest"
 	"time"
@@ -38,6 +41,7 @@ type Entry struct {
 	Version      string
 	Tags         []string
 	SolutionTags []string // hint at the solution; hidden by default
+	Unsupported  string   // why it can't be judged here; "" if it can
 	Cached       bool     // statement and tests are stored, so it works offline
 }
 
@@ -47,6 +51,7 @@ type Set struct {
 	URL     string
 	backend Backend
 	store   Store
+	rootID  string // the id when the source is one problem
 
 	mu      sync.Mutex
 	ix      *Index
@@ -63,12 +68,32 @@ func New(url string, c *Client, st Store) (*Set, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewFromBackend(url, GitHub{Repo: r, Client: c}, st), nil
+	s := NewFromBackend(url, GitHub{Repo: r, Client: c}, st)
+	// Not the ref: …/tree/main is the repo.
+	s.rootID = r.Name
+	if r.Dir != "" {
+		s.rootID = path.Base(r.Dir)
+	}
+	return s, nil
 }
 
 // NewFromBackend returns the Set of files from b; url keys it in st.
 func NewFromBackend(url string, b Backend, st Store) *Set {
-	return &Set{URL: url, backend: b, store: st}
+	return &Set{URL: url, backend: b, store: st, rootID: baseName(url)}
+}
+
+// baseName is the last path segment of a source URL, naming a source that
+// is one problem.
+func baseName(u string) string {
+	p := u
+	if pu, err := neturl.Parse(u); err == nil && pu.Path != "" {
+		p = pu.Path
+	}
+	name := strings.TrimSuffix(path.Base(strings.TrimRight(p, "/")), ".git")
+	if name == "" || name == "." || name == "/" {
+		return "problem"
+	}
+	return name
 }
 
 // Open loads the list from the store, or from the backend if it isn't stored.
@@ -115,7 +140,7 @@ func (s *Set) Refresh(ctx context.Context) error {
 		}
 		ix = &Index{Commit: commit, Files: files}
 		// Get what the list is built from before saving ix.
-		f, err := formatOf(ix)
+		f, err := formatOf(ix, s.rootID)
 		if err != nil {
 			return err
 		}
@@ -144,7 +169,7 @@ func (s *Set) setIndex(ix *Index) error {
 		s.ix = ix
 		return nil
 	}
-	f, err := formatOf(ix)
+	f, err := formatOf(ix, s.rootID)
 	if err != nil {
 		return err
 	}
@@ -163,7 +188,7 @@ func (s *Set) setIndex(ix *Index) error {
 	for _, e := range list {
 		entries = append(entries, Entry{ID: e.ID, Title: e.Title, TimeLimit: e.TimeLimit,
 			TimeLimits: e.TimeLimits, Version: e.Version, Tags: e.Tags,
-			SolutionTags: e.SolutionTags})
+			SolutionTags: e.SolutionTags, Unsupported: e.Unsupported})
 		metas[e.ID] = e.Meta
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })
@@ -236,6 +261,9 @@ func (s *Set) Problem(ctx context.Context, id string) (*problems.Problem, error)
 		}
 		fsys[f.Path] = &fstest.MapFile{Data: bs}
 	}
+	if err := s.resolveLinks(ctx, ix, files, fsys); err != nil {
+		return nil, err
+	}
 	p, err := f.load(fsys, id, m)
 	if err != nil {
 		return nil, err
@@ -247,6 +275,39 @@ func (s *Set) Problem(ctx context.Context, id string) (*problems.Problem, error)
 		s.probs[id] = p
 	}
 	return p, nil
+}
+
+// resolveLinks replaces each symbolic link in fsys with its target's content.
+func (s *Set) resolveLinks(ctx context.Context, ix *Index, files []File, fsys fstest.MapFS) error {
+	for _, f := range files {
+		if !f.Link {
+			continue
+		}
+		cur := f
+		for range 8 { // links to links, but not loops
+			bs, ok := s.store.Blob(cur.SHA)
+			if !ok {
+				return fmt.Errorf("快取缺少 %s", cur.Path)
+			}
+			if !cur.Link {
+				fsys[f.Path] = &fstest.MapFile{Data: bs}
+				break
+			}
+			target := path.Clean(path.Join(path.Dir(cur.Path), strings.TrimSpace(string(bs))))
+			next, ok := ix.find(target)
+			if !ok {
+				return fmt.Errorf("連結 %s 指向不存在的 %s", f.Path, target)
+			}
+			if err := s.fetch(ctx, ix.Commit, []File{next}, nil); err != nil {
+				return err
+			}
+			cur = next
+		}
+		if cur.Link {
+			return fmt.Errorf("連結 %s 連結太多層", f.Path)
+		}
+	}
+	return nil
 }
 
 // DownloadAll downloads every problem, so all of them work offline.
