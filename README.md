@@ -80,15 +80,21 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 
 ## 題目來源
 
-在「設定」填 GitHub 上的資料夾網址，預設為
-`https://github.com/mudream4869/offline-judge/tree/main/problems`。
-格式為 `https://github.com/<owner>/<repo>[/tree/<ref>[/<資料夾>]]`，ref 不能含 `/`，只支援公開 repo。
+「設定」可以加入多個 GitHub 資料夾作為題目來源，題目列表合併顯示，側欄可依來源篩選。預設只有
+`https://github.com/mudream4869/offline-judge/tree/main/problems`；「推薦來源」可以一鍵加入（清單在
+`cmd/offline-judge/sources.go` 的 `recommended`）。
+網址格式為 `https://github.com/<owner>/<repo>[/tree/<ref>[/<資料夾>]]`，ref 不能含 `/`，只支援公開 repo。
+
+- 每個來源各自載入、檢查更新；某個來源載入失敗只在該處顯示錯誤，其他來源照常
+- 題目在 app 裡的 id：預設來源的題目維持原本的 id（提交紀錄、草稿不受影響）；其他來源加上 `owner/repo/資料夾:`
+  前綴（例如 `Kattis/problemtools/examples:hello`），避免不同來源撞名
+- 以前只能設一個來源（`source`），會自動當成只有這一項的清單
 
 - 載入列表：用 GitHub API 把 ref 解析成 commit，再一次列出整個 tree，並下載題目列表 `problems.json`（只有一個檔案）
 - 開啟題目時才下載 `statement.md` 與測資，檔案來自 `raw.githubusercontent.com`（固定在該 commit），
   下載後用 blob sha 驗證並存進 IndexedDB
 - 之後啟動先用快取顯示，背景只打 1 次 API 檢查 commit 有沒有變；有變才重新列 tree，沒變過的檔案不重抓
-- 未登入的 GitHub API 每小時 60 次，正常使用每次啟動 1 次
+- 未登入的 GitHub API 每小時 60 次，正常使用每次啟動每個來源 1 次
 - 開啟過的題目可離線使用；「設定」的「全部下載」可一次下載全部題目
 
 抓取邏輯在 `internal/source`（用 Go 的 `net/http`，在瀏覽器裡走 fetch）：

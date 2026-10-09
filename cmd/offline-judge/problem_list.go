@@ -19,19 +19,17 @@ import (
 
 // Problems lists the problems; picking a row opens it.
 func Problems(p *tgframe.Params) error {
-	s := openSet(p.Main, p.Context)
-	if s == nil {
-		return nil
-	}
-	es := s.Entries()
+	ct := openCatalog(p.Main, p.Context)
+	es := ct.entries
 	if len(es) == 0 {
-		tgcomp.MessageWarning(p.Main, "這個來源沒有題目")
+		tgcomp.MessageWarning(p.Main, "沒有題目")
+		tgcomp.PageLink(p.Main, "到設定新增題目來源", "settings", nil)
 		return nil
 	}
 
 	e := pickedEntry(p, es)
 	if e == nil {
-		problemList(p, es)
+		problemList(p, ct)
 		return nil
 	}
 
@@ -40,7 +38,7 @@ func Problems(p *tgframe.Params) error {
 	if !e.Cached {
 		done = tgcomp.Spinner(p.Main, "下載題目中…")
 	}
-	pr, err := s.Problem(p.Context, e.ID)
+	pr, err := ct.problem(p.Context, e.ID)
 	done()
 	if err != nil {
 		tgcomp.MessageDanger(p.Main, "無法載入題目："+err.Error())
@@ -84,7 +82,8 @@ func pickQuery(q url.Values, id string) url.Values {
 
 // problemList draws the list; picking a row opens it. The filters are kept
 // in the query, so Back and the back link restore them.
-func problemList(p *tgframe.Params, es []source.Entry) {
+func problemList(p *tgframe.Params, ct *catalog) {
+	es := ct.entries
 	showSol := showSolutionTags()
 	q := url.Values{}
 	search := tgcomp.Textbox(p.Sidebar, "搜尋", &tgcomp.TextboxConf{
@@ -113,6 +112,23 @@ func problemList(p *tgframe.Params, es []source.Entry) {
 		}
 		q["tag"] = want
 	}
+	var srcs []string // empty: all
+	if len(ct.labels) > 1 {
+		var def []int
+		for _, l := range p.Query["src"] {
+			if i := slices.Index(ct.labels, l); i >= 0 {
+				def = append(def, i)
+			}
+		}
+		for _, i := range tgcomp.MultiSelect(p.Sidebar, "來源", ct.labels, &tgcomp.MultiSelectConf{
+			Base:        tgframe.Base{ID: "problem_sources"},
+			Placeholder: "全部",
+			Default:     def,
+		}) {
+			srcs = append(srcs, ct.labels[i])
+		}
+		q["src"] = srcs
+	}
 	filter := max(slices.Index(statusKeys, p.Query.Get("status")), 0)
 	if i := tgcomp.Select(p.Sidebar, "狀態", statusFilters, (&tgcomp.SelectConf{
 		Base: tgframe.Base{ID: "problem_status"},
@@ -131,10 +147,11 @@ func problemList(p *tgframe.Params, es []source.Entry) {
 	var rows [][]tgcomp.Cell
 	for i := range es {
 		e := &es[i]
-		num := problemNumber(e.ID)
+		ref := ct.refs[e.ID]
+		num := problemNumber(ref.id)
 		tags := entryTags(e, showSol)
 		st := status[e.ID]
-		if !hasTags(tags, want) ||
+		if len(srcs) > 0 && !slices.Contains(srcs, ref.label) || !hasTags(tags, want) ||
 			!strings.Contains(strings.ToLower(num+" "+e.Title), query) ||
 			filter == 1 && st != solvedMark || filter == 2 && st == solvedMark {
 			continue

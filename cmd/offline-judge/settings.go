@@ -3,41 +3,88 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"log"
-	"sync"
+	"slices"
+	"strconv"
 
 	"github.com/voilelab/toolgui/toolgui/tgcomp"
+	"github.com/voilelab/toolgui/toolgui/tgcomp/tcutil"
 	"github.com/voilelab/toolgui/toolgui/tgframe"
-
-	"github.com/mudream4869/offline-judge/internal/source"
 )
 
-// Settings sets the problem source.
+// Settings sets the problem sources and display options.
 func Settings(p *tgframe.Params) error {
 	tgcomp.Title(p.Main, "設定")
 
+	// Clicks first, so everything below sees the new list.
+	urls := sourceURLs()
+	for _, url := range urls {
+		if tgcomp.ButtonClicked(p.Main, "移除", removeConf(url)) {
+			setSourceURLs(slices.DeleteFunc(slices.Clone(urls), func(u string) bool { return u == url }))
+		}
+	}
+	for _, r := range recommended {
+		if tgcomp.ButtonClicked(p.Main, "加入", recommendConf(r.url)) {
+			addSource(p.Main, r.url)
+		}
+	}
 	resetConf := &tgcomp.ButtonConf{ID: "source_reset"}
 	if tgcomp.ButtonClicked(p.Main, "還原預設", resetConf) {
-		memo.setText("source", defaultSource)
+		setSourceURLs([]string{defaultSource})
 	}
-	cur := sourceURL()
-	url := tgcomp.Textbox(p.Main, "題目來源", &tgcomp.TextboxConf{
-		Default:     cur,
-		ResetKey:    cur,
-		Placeholder: defaultSource,
+	urls = sourceURLs()
+
+	tgcomp.Subtitle(p.Main, "題目來源")
+	tgcomp.Caption(p.Main, "題目列表合併顯示所有來源的題目")
+	if len(urls) == 0 {
+		tgcomp.MessageWarning(p.Main, "沒有任何來源，題目列表會是空的；可以從下方的推薦來源加入")
+	}
+	var loaded []string
+	for _, url := range urls {
+		box := tgcomp.Box(p.Main, &tgcomp.BoxConf{Base: tgframe.Base{ID: "src_" + url}})
+		tgcomp.Text(box, sourceLabel(url))
+		if s := openSet(box, p.Context, url); s != nil {
+			loaded = append(loaded, url)
+			es := s.Entries()
+			cached := 0
+			for _, e := range es {
+				if e.Cached {
+					cached++
+				}
+			}
+			tgcomp.Caption(box, fmt.Sprintf("commit %s，上次檢查 %s，共 %d 題，%d 題可離線",
+				s.Commit()[:7], s.Checked().Format("2006-01-02 15:04"), len(es), cached))
+		}
+		tgcomp.Button(box, "移除", removeConf(url))
+	}
+	sourceActions(p, loaded)
+
+	tgcomp.Subtitle(p.Main, "新增來源")
+	// Cleared after each add, keyed by the list length.
+	url := tgcomp.Textbox(p.Main, "GitHub 網址", &tgcomp.TextboxConf{
+		Base:        tgframe.Base{ID: "source_new"},
+		ResetKey:    strconv.Itoa(len(urls)),
+		Placeholder: "https://github.com/<owner>/<repo>/tree/<分支>/<資料夾>",
 	})
-	tgcomp.Caption(p.Main, "GitHub 上的資料夾，例如 "+defaultSource+
-		"；分支名稱不能含 /")
-	if tgcomp.Button(p.Main, "套用", &tgcomp.ButtonConf{ID: "source_apply"}) {
-		if _, err := source.Parse(url); err != nil {
-			tgcomp.MessageDanger(p.Main, err.Error())
+	tgcomp.Caption(p.Main, "可以是本站格式的題庫、放了多個 Kattis 題目包的資料夾，或單一 Kattis 題目包；分支名稱不能含 /")
+	if tgcomp.Button(p.Main, "新增", &tgcomp.ButtonConf{ID: "source_add"}) && url != "" {
+		addSource(p.Main, url)
+		app.RerunPage("settings")
+	}
+
+	tgcomp.Subtitle(p.Main, "推薦來源")
+	for _, r := range recommended {
+		box := tgcomp.Box(p.Main, &tgcomp.BoxConf{Base: tgframe.Base{ID: "rec_" + r.url}})
+		tgcomp.Text(box, r.name)
+		tgcomp.Caption(box, r.note+"："+r.url)
+		if slices.Contains(urls, r.url) {
+			tgcomp.Caption(box, "已加入")
 		} else {
-			memo.setText("source", url)
+			tgcomp.Button(box, "加入", recommendConf(r.url))
 		}
 	}
 	tgcomp.Button(p.Main, "還原預設", resetConf)
+	tgcomp.Caption(p.Main, "還原成只有 Offline Judge 題庫")
 
 	tgcomp.Subtitle(p.Main, "顯示")
 	setShowSolutionTags(tgcomp.Checkbox(p.Main, "顯示解法標籤（可能暴雷）", &tgcomp.CheckboxConf{
@@ -45,45 +92,51 @@ func Settings(p *tgframe.Params) error {
 		Default: showSolutionTags(),
 	}))
 	tgcomp.Caption(p.Main, "解法標籤會提示要用的演算法，預設收合；開啟後顯示在題目列表與題目頁，也能用來篩選")
+	return nil
+}
 
-	tgcomp.Subtitle(p.Main, "目前來源")
-	s := openSet(p.Main, p.Context)
-	if s == nil {
-		return nil
+// sourceActions checks for updates and downloads, for every loaded source.
+func sourceActions(p *tgframe.Params, urls []string) {
+	if len(urls) == 0 {
+		return
 	}
 	if tgcomp.Button(p.Main, "檢查更新", &tgcomp.ButtonConf{ID: "source_refresh"}) {
 		done := tgcomp.Spinner(p.Main, "檢查中…")
-		err := s.Refresh(p.Context)
-		done()
-		if err != nil {
-			tgcomp.MessageDanger(p.Main, "檢查更新失敗："+err.Error())
+		for _, url := range urls {
+			if err := loadedSet(url).Refresh(p.Context); err != nil {
+				tgcomp.MessageDanger(p.Main, "檢查 "+sourceLabel(url)+" 更新失敗："+err.Error())
+			}
 		}
+		done()
+		app.RerunPage("settings")
 	}
-	if tgcomp.Button(p.Main, "全部下載（離線使用）",
-		&tgcomp.ButtonConf{ID: "source_download"}) {
+	if tgcomp.Button(p.Main, "全部下載（離線使用）", &tgcomp.ButtonConf{ID: "source_download"}) {
 		st := tgcomp.Status(p.Main, "下載中…")
-		err := s.DownloadAll(p.Context, func(done, total int) {
-			st.Update(fmt.Sprintf("下載中 %d/%d", done, total))
-		})
-		if err != nil {
+		failed := false
+		for _, url := range urls {
+			label := sourceLabel(url)
+			err := loadedSet(url).DownloadAll(p.Context, func(done, total int) {
+				st.Update(fmt.Sprintf("下載 %s 中 %d/%d", label, done, total))
+			})
+			if err != nil {
+				failed = true
+				tgcomp.MessageDanger(p.Main, label+"："+err.Error())
+			}
+		}
+		if failed {
 			st.Error("下載失敗")
-			tgcomp.MessageDanger(p.Main, err.Error())
 		} else {
 			st.Complete("下載完成")
 		}
 	}
+}
 
-	es := s.Entries()
-	cached := 0
-	for _, e := range es {
-		if e.Cached {
-			cached++
-		}
-	}
-	tgcomp.Text(p.Main, s.URL)
-	tgcomp.Caption(p.Main, fmt.Sprintf("commit %s，上次檢查 %s，共 %d 題，%d 題可離線",
-		s.Commit()[:7], s.Checked().Format("2006-01-02 15:04"), len(es), cached))
-	return nil
+func removeConf(url string) *tgcomp.ButtonConf {
+	return &tgcomp.ButtonConf{ID: "src_rm_" + url, Color: tcutil.ColorDanger}
+}
+
+func recommendConf(url string) *tgcomp.ButtonConf {
+	return &tgcomp.ButtonConf{ID: "src_add_" + url}
 }
 
 // showSolutionTags reports whether solution tags are shown, a setting.
@@ -97,62 +150,4 @@ func setShowSolutionTags(show bool) {
 		v = "1"
 	}
 	memo.setText("show_solution_tags", v)
-}
-
-const defaultSource = "https://github.com/mudream4869/offline-judge/tree/main/problems"
-
-var (
-	setMu      sync.Mutex
-	curSet     *source.Set
-	ghClient   = source.NewClient()
-	probsStore source.Store
-)
-
-func sourceURL() string {
-	return memo.getText("source", defaultSource)
-}
-
-// openSet returns the Set of the current source, loading its list on first
-// use. On failure it shows why in c and returns nil.
-func openSet(c *tgframe.Container, ctx context.Context) *source.Set {
-	setMu.Lock()
-	defer setMu.Unlock()
-	url := sourceURL()
-	if curSet == nil || curSet.URL != url {
-		if probsStore == nil {
-			probsStore = newProblemStore()
-		}
-		s, err := source.New(url, ghClient, probsStore)
-		if err != nil {
-			tgcomp.MessageDanger(c, "題目來源有誤："+err.Error())
-			tgcomp.PageLink(c, "前往設定", "settings", nil)
-			return nil
-		}
-		curSet = s
-	}
-	s := curSet
-	if s.Commit() != "" {
-		return s
-	}
-
-	done := tgcomp.Spinner(c, "載入題目列表…")
-	cached, err := s.Open(ctx)
-	done()
-	if err != nil {
-		tgcomp.MessageDanger(c, "無法載入題目列表："+err.Error())
-		tgcomp.Button(c, "重試")
-		return nil
-	}
-	if cached {
-		// Show the stored list now; rerun the pages if a newer one comes.
-		old := s.Commit()
-		go func() {
-			if err := s.Refresh(context.Background()); err != nil {
-				log.Printf("檢查題目更新失敗：%v", err)
-			} else if s.Commit() != old {
-				app.RerunAll()
-			}
-		}()
-	}
-	return s
 }

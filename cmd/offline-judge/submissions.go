@@ -123,19 +123,15 @@ func submissionList(p *tgframe.Params, subs []*submission) {
 	}
 }
 
-// currentEntries maps problem IDs to entries of the current source; empty if
-// it can't be loaded.
+// currentEntries maps problem keys to entries of the sources that load.
 func currentEntries(p *tgframe.Params, c *tgframe.Container) map[string]source.Entry {
 	out := map[string]source.Entry{}
 	slot := tgcomp.Empty(c)
-	var s *source.Set
-	slot.With(func(c *tgframe.Container) { s = openSet(c, p.Context) })
-	if s == nil {
-		// The problem page shows why; here IDs will do.
-		slot.Clear()
-		return out
-	}
-	for _, e := range s.Entries() {
+	var ct *catalog
+	slot.With(func(c *tgframe.Container) { ct = openCatalog(c, p.Context) })
+	// The problem page says why a source fails; here keys will do.
+	slot.Clear()
+	for _, e := range ct.entries {
 		out[e.ID] = e
 	}
 	return out
@@ -147,22 +143,21 @@ func showSubmission(p *tgframe.Params, sub *submission) error {
 	// Load the problem to show the failed test; it may be gone from the source.
 	var pr *problems.Problem
 	title, found := sub.Problem, false
-	if s := openSet(p.Main, p.Context); s != nil {
-		for _, e := range s.Entries() {
-			if e.ID != sub.Problem {
-				continue
-			}
-			title, found = e.Title, true
-			done := func() {}
-			if !e.Cached {
-				done = tgcomp.Spinner(p.Main, "下載題目中…")
-			}
-			var err error
-			pr, err = s.Problem(p.Context, e.ID)
-			done()
-			if err != nil {
-				tgcomp.MessageWarning(p.Main, "無法載入題目："+err.Error())
-			}
+	ct := openCatalog(p.Main, p.Context)
+	for _, e := range ct.entries {
+		if e.ID != sub.Problem {
+			continue
+		}
+		title, found = e.Title, true
+		done := func() {}
+		if !e.Cached {
+			done = tgcomp.Spinner(p.Main, "下載題目中…")
+		}
+		var err error
+		pr, err = ct.problem(p.Context, e.ID)
+		done()
+		if err != nil {
+			tgcomp.MessageWarning(p.Main, "無法載入題目："+err.Error())
 		}
 	}
 

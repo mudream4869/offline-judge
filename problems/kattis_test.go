@@ -195,12 +195,13 @@ func TestKattisRoot(t *testing.T) {
 }
 
 func TestTexToMarkdown(t *testing.T) {
-	tex := "\\problemname{X}\n\\section*{Output}\n" +
+	tex := "\\setlength{\\parskip}{4pt}\n\\problemname{X}\n\\section*{Output}\n" +
+		"Escape with \\verb|\\n| or \\verb+a|b+.\n" +
 		"Print ``yes'' or \\texttt{no}, \\textbf{bold} \\emph{it} 50\\% \\(a_i\\).\n" +
 		"\\begin{itemize}\n\\item one\n\\item two\n\\end{itemize}\n" +
 		"\\begin{tabular}{|l|l|}\n\\hline\nA & B \\\\ \\hline\n1 & 2 \\\\\n\\end{tabular}\n" +
 		"\\illustration{0.3}{cave.jpg}{A cave}\n"
-	want := "## Output\n\nPrint “yes” or `no`, **bold** *it* 50% $a_i$.\n\n" +
+	want := "## Output\n\nEscape with `\\n` or `a|b`.\nPrint “yes” or `no`, **bold** *it* 50% $a_i$.\n\n" +
 		"- one\n- two\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n（圖：A cave）\n"
 	if got := texToMarkdown(tex); got != want {
 		t.Errorf("texToMarkdown =\n%s\nwant\n%s", got, want)

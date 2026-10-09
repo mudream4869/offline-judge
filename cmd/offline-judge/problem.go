@@ -355,18 +355,19 @@ func subtaskTable(subs []problems.Subtask) string {
 // reportURL links to a new issue about pr on the source's repository,
 // prefilled with what identifies the problem; "" if the source isn't valid.
 func reportURL(pr *problems.Problem) string {
-	src := sourceURL()
-	r, err := source.Parse(src)
+	ref, ok := refOf(pr.ID)
+	if !ok {
+		return ""
+	}
+	r, err := source.Parse(ref.set.URL)
 	if err != nil {
 		return ""
 	}
 	at := ""
-	setMu.Lock()
-	if curSet != nil && curSet.URL == src && curSet.Commit() != "" {
-		at = "（commit " + curSet.Commit()[:7] + "）"
+	if c := ref.set.Commit(); c != "" {
+		at = "（commit " + c[:7] + "）"
 	}
-	setMu.Unlock()
 	body := fmt.Sprintf("題目：%s（%s）\n版本：%s\n來源：%s%s\n\n## 問題描述\n\n",
-		pr.Title, pr.ID, pr.Version, src, at)
-	return source.IssueURL(r, "題目 "+problemNumber(pr.ID)+" "+pr.Title+"：", body)
+		pr.Title, ref.id, pr.Version, ref.set.URL, at)
+	return source.IssueURL(r, "題目 "+problemNumber(ref.id)+" "+pr.Title+"：", body)
 }
