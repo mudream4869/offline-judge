@@ -150,7 +150,7 @@ go test ./problems -update   # 從每題的 problem.json 重新產生 problems.j
 ```
 
 `version` 是題目最後修改的時間（`YYYY-MM-DD hh:mm:ss`），改了敘述、測資或時間限制就要更新；
-提交紀錄會記下評測時的版本，版本不同時標示「舊版」。
+提交紀錄會記下評測時的版本，版本不同時標示「舊版」，並可在「紀錄」或提交紀錄頁按「用目前版本重新評測」，結果存成新的一筆。
 
 `time_limits_ms` 選填，依語言（`py`、`cpp`、`js`、`go`）覆寫 `time_limit_ms`，沒列出的語言用 `time_limit_ms`。
 只在其他語言用錯的複雜度也能過時才需要，例如 `0006-rmq` 的 `{"py": 6000, "js": 1000}`。
