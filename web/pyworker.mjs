@@ -1,9 +1,9 @@
 // Runs Python submissions with Pyodide. One worker = one Pyodide instance;
 // the Go side terminates it on timeout and starts another.
 //
-// in:  {id, code, stdin, interactor?}
+// in:  {id, code, stdin, interactor?, outputLimit?}
 // out: {type: "ready"} | {type: "error", error}
-//      {type: "result", id, status: "ok"|"re", stdout, stderr, ms, fatal,
+//      {type: "result", id, status: "ok"|"re"|"ole", stdout, stderr, ms, fatal,
 //       judged?, iaError?}
 //
 // With interactor (interactor.js source), stdin is its input and the
@@ -38,8 +38,24 @@ class _Interactive(io.RawIOBase):
         self.pending = self.pending[n:]
         return n
 
-def _judge_run(code, data, ask=None):
-    out = io.BytesIO()
+class _OutputLimit(BaseException):
+    pass
+
+class _Out(io.BytesIO):
+    """Stdout that stops the program once it passes limit bytes."""
+
+    def __init__(self, limit):
+        super().__init__()
+        self.limit, self.over = limit, False
+
+    def write(self, b):
+        if self.over or self.tell() + len(b) > self.limit:
+            self.over = True
+            raise _OutputLimit
+        return super().write(b)
+
+def _judge_run(code, data, limit, ask=None):
+    out = _Out(limit)
     raw = _Interactive(ask, out) if ask else None
     if raw:
         sin = io.TextIOWrapper(io.BufferedReader(raw), encoding="utf-8")
@@ -58,16 +74,20 @@ def _judge_run(code, data, ask=None):
             status = "re"
             err.write(f"SystemExit: {e.code}\\n")
     except BaseException as e:
-        status = "re"
-        # Drop the harness frame from the traceback.
-        traceback.print_exception(type(e), e, e.__traceback__.tb_next, file=err)
+        if not out.over:
+            status = "re"
+            # Drop the harness frame from the traceback.
+            traceback.print_exception(type(e), e, e.__traceback__.tb_next, file=err)
     finally:
         ms = (time.perf_counter() - t0) * 1000
         try:
             sout.flush()
-        except Exception:
+        except BaseException:
             pass
         sys.stdin, sys.stdout, sys.stderr = saved
+    # Even if the program caught _OutputLimit.
+    if out.over:
+        status = "ole"
     rest = out.getvalue()[raw.sent if raw else 0:]
     return status, out.getvalue().decode("utf-8", "replace"), err.getvalue(), ms, \
         rest.decode("utf-8", "replace")
@@ -75,7 +95,7 @@ def _judge_run(code, data, ask=None):
 
 let run = null
 
-self.onmessage = async ({ data: { id, code, stdin, interactor } }) => {
+self.onmessage = async ({ data: { id, code, stdin, interactor, outputLimit = Infinity } }) => {
   await ready
   let ia = null
   if (interactor) {
@@ -90,7 +110,9 @@ self.onmessage = async ({ data: { id, code, stdin, interactor } }) => {
     }
   }
   try {
-    const res = ia ? run(code, '', (out) => ia.read(out) ?? undefined) : run(code, stdin)
+    const res = ia
+      ? run(code, '', outputLimit, (out) => ia.read(out) ?? undefined)
+      : run(code, stdin, outputLimit)
     let [status, stdout, stderr, ms, rest] = res.toJs()
     res.destroy()
     let extra = {}

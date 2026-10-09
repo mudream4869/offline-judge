@@ -1,9 +1,9 @@
 // Runs a compiled WASI module (C++, Go). Cheap to start, so the Go side
 // kills it on timeout and uses a spare.
 //
-// in:  {id, module, stdin, interactor?}
+// in:  {id, module, stdin, interactor?, outputLimit?}
 // out: {type: "ready"}
-//      {type: "result", id, status: "ok"|"re", stdout, stderr, ms, fatal,
+//      {type: "result", id, status: "ok"|"re"|"ole", stdout, stderr, ms, fatal,
 //       judged?, iaError?}
 //
 // With interactor (interactor.js source), stdin is its input and the
@@ -14,11 +14,21 @@ import { lockdown, importDefault, Interaction, interactionResult } from './sandb
 
 const enc = new TextEncoder()
 
-function collector() {
+// collector keeps what is written; past limit bytes it sets over and
+// throws, which unwinds the program.
+function collector(limit = Infinity) {
   const parts = []
   let taken = 0
+  let size = 0
   const dec = new TextDecoder()
-  const fd = new ConsoleStdout((b) => parts.push(b.slice()))
+  const fd = new ConsoleStdout((b) => {
+    size += b.length
+    if (size > limit) {
+      fd.over = true
+      throw new Error('output limit exceeded')
+    }
+    parts.push(b.slice())
+  })
   fd.text = () => {
     const d = new TextDecoder()
     return parts.map((b) => d.decode(b, { stream: true })).join('') + d.decode()
@@ -57,8 +67,8 @@ class InteractiveStdin extends Fd {
   }
 }
 
-self.onmessage = async ({ data: { id, module, stdin, interactor } }) => {
-  const out = collector()
+self.onmessage = async ({ data: { id, module, stdin, interactor, outputLimit } }) => {
+  const out = collector(outputLimit)
   const err = collector()
   let ia = null
   if (interactor) {
@@ -89,6 +99,7 @@ self.onmessage = async ({ data: { id, module, stdin, interactor } }) => {
     err.write(enc.encode(`\n${e}\n`))
   }
   let ms = performance.now() - t0
+  if (out.over) status = 'ole'
   let extra = { stdout: out.text() }
   if (ia) {
     extra = interactionResult(ia, out.take())

@@ -234,3 +234,16 @@ func TestJudgeSubtasksCE(t *testing.T) {
 		t.Errorf("got %+v, want CE 0/100", rep)
 	}
 }
+
+func TestJudgeOLE(t *testing.T) {
+	r := fakeRunner{"a": {Status: RunOutputLimit, Stdout: "1\n"}, "b": {Status: RunOK, Stdout: "1"}}
+	rep, err := Judge(context.Background(), r, "", []Case{{Name: "a", Input: "a", Output: "1"},
+		{Name: "b", Input: "b", Output: "1"}}, Spec{Limit: time.Second}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The output matches, but the program was cut off; later cases still run.
+	if rep.Verdict != OLE || rep.Cases[0].Verdict != OLE || rep.Cases[1].Verdict != AC {
+		t.Errorf("got %+v, want OLE then AC", rep)
+	}
+}

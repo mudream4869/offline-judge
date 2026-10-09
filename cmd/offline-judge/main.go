@@ -799,6 +799,8 @@ func customPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 		return
 	case res.Status == judge.RunTimeout || res.Time > limit:
 		tgcomp.MessageWarning(c, "TLE："+fmtTime(res.Time))
+	case res.Status == judge.RunOutputLimit:
+		tgcomp.MessageDanger(c, "OLE："+verdictName(judge.OLE))
 	case res.Judged != nil && !res.Judged.OK:
 		tgcomp.MessageDanger(c, "WA："+res.Judged.Message)
 	case res.Status == judge.RunError:
@@ -990,6 +992,8 @@ func verdictName(v judge.Verdict) string {
 		return "執行錯誤"
 	case judge.CE:
 		return "編譯錯誤"
+	case judge.OLE:
+		return fmt.Sprintf("輸出超過 %d MB", outputLimit>>20)
 	}
 	return ""
 }
