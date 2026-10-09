@@ -5,9 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
-	"path"
 	"sort"
-	"strings"
 	"sync"
 	"testing/fstest"
 	"time"
@@ -15,9 +13,9 @@ import (
 	"github.com/mudream4869/offline-judge/problems"
 )
 
-// Index is the file list of a source at one commit.
+// Index is the file list of a source at one version.
 type Index struct {
-	Commit  string
+	Commit  string // the version; a commit for GitHub
 	Files   []File
 	Checked time.Time // last time Commit was confirmed latest
 }
@@ -43,35 +41,37 @@ type Entry struct {
 	Cached       bool     // statement and tests are stored, so it works offline
 }
 
-// listFile lists the problems of a source, so the list is one download.
-const listFile = "problems.json"
-
-// Set is the problems of one source. problems.json comes with the list;
-// statement, checker, interactor and tests are downloaded when a problem is opened.
+// Set is the problems of one source. The files the list is built from come
+// with the list; the rest are downloaded when a problem is opened.
 type Set struct {
-	URL    string
-	repo   Repo
-	client *Client
-	store  Store
+	URL     string
+	backend Backend
+	store   Store
 
 	mu      sync.Mutex
 	ix      *Index
+	fmt     format // of ix
 	entries []Entry
 	metas   map[string]problems.Meta     // by id
 	have    map[string]bool              // blob shas in store
 	probs   map[string]*problems.Problem // for ix.Commit
 }
 
-// New returns the Set of url.
+// New returns the Set of a GitHub url, fetched with c.
 func New(url string, c *Client, st Store) (*Set, error) {
 	r, err := Parse(url)
 	if err != nil {
 		return nil, err
 	}
-	return &Set{URL: url, repo: r, client: c, store: st}, nil
+	return NewFromBackend(url, GitHub{Repo: r, Client: c}, st), nil
 }
 
-// Open loads the list from the store, or from GitHub if it isn't stored.
+// NewFromBackend returns the Set of files from b; url keys it in st.
+func NewFromBackend(url string, b Backend, st Store) *Set {
+	return &Set{URL: url, backend: b, store: st}
+}
+
+// Open loads the list from the store, or from the backend if it isn't stored.
 // cached tells which, so the caller can Refresh a stored one.
 func (s *Set) Open(ctx context.Context) (cached bool, err error) {
 	s.mu.Lock()
@@ -95,9 +95,9 @@ func (s *Set) Open(ctx context.Context) (cached bool, err error) {
 	return false, s.Refresh(ctx)
 }
 
-// Refresh fetches the latest list from GitHub.
+// Refresh fetches the latest list from the backend.
 func (s *Set) Refresh(ctx context.Context) error {
-	commit, err := s.client.Commit(ctx, s.repo)
+	commit, err := s.backend.Latest(ctx)
 	if err != nil {
 		return err
 	}
@@ -109,17 +109,21 @@ func (s *Set) Refresh(ctx context.Context) error {
 	if old != nil && old.Commit == commit {
 		ix = &Index{Commit: commit, Files: old.Files}
 	} else {
-		files, err := s.client.Tree(ctx, s.repo, commit)
+		files, err := s.backend.List(ctx, commit)
 		if err != nil {
 			return err
 		}
 		ix = &Index{Commit: commit, Files: files}
-		// The list needs problems.json; get it before saving ix.
-		list, ok := ix.list()
-		if !ok {
-			return fmt.Errorf("來源缺少 %s", listFile)
+		// Get what the list is built from before saving ix.
+		f, err := formatOf(ix)
+		if err != nil {
+			return err
 		}
-		if err := s.fetch(ctx, commit, []File{list}, nil); err != nil {
+		need, err := f.listFiles(ix)
+		if err != nil {
+			return err
+		}
+		if err := s.fetch(ctx, commit, need, nil); err != nil {
 			return err
 		}
 	}
@@ -140,17 +144,19 @@ func (s *Set) setIndex(ix *Index) error {
 		s.ix = ix
 		return nil
 	}
-	f, ok := ix.list()
-	if !ok {
-		return fmt.Errorf("來源缺少 %s", listFile)
-	}
-	bs, ok := s.store.Blob(f.SHA)
-	if !ok {
-		return fmt.Errorf("快取缺少 %s", listFile)
-	}
-	list, err := problems.ParseList(bs)
+	f, err := formatOf(ix)
 	if err != nil {
-		return fmt.Errorf("%s：%w", listFile, err)
+		return err
+	}
+	list, err := f.list(ix, func(f File) ([]byte, error) {
+		bs, ok := s.store.Blob(f.SHA)
+		if !ok {
+			return nil, fmt.Errorf("快取缺少 %s", f.Path)
+		}
+		return bs, nil
+	})
+	if err != nil {
+		return err
 	}
 	var entries []Entry
 	metas := map[string]problems.Meta{}
@@ -162,6 +168,7 @@ func (s *Set) setIndex(ix *Index) error {
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })
 	s.ix = ix
+	s.fmt = f
 	s.entries = entries
 	s.metas = metas
 	s.probs = map[string]*problems.Problem{}
@@ -212,7 +219,7 @@ func (s *Set) Problem(ctx context.Context, id string) (*problems.Problem, error)
 		return p, nil
 	}
 	m, ok := s.metas[id]
-	ix, files := s.ix, s.files(id)
+	ix, f, files := s.ix, s.fmt, s.files(id)
 	s.mu.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("沒有題目 %s", id)
@@ -229,7 +236,7 @@ func (s *Set) Problem(ctx context.Context, id string) (*problems.Problem, error)
 		}
 		fsys[f.Path] = &fstest.MapFile{Data: bs}
 	}
-	p, err := problems.LoadWithMeta(fsys, id, m)
+	p, err := f.load(fsys, id, m)
 	if err != nil {
 		return nil, err
 	}
@@ -260,18 +267,7 @@ func (s *Set) DownloadAll(ctx context.Context, progress func(done, total int)) e
 
 // files returns what problem id needs. s.mu must be held.
 func (s *Set) files(id string) []File {
-	var out []File
-	for _, f := range s.ix.Files {
-		rest, ok := strings.CutPrefix(f.Path, id+"/")
-		if !ok {
-			continue
-		}
-		if rest == "statement.md" || rest == problems.CheckerFile || rest == problems.InteractorFile ||
-			(path.Dir(rest) == "tests" && (path.Ext(rest) == ".in" || path.Ext(rest) == ".out")) {
-			out = append(out, f)
-		}
-	}
-	return out
+	return s.fmt.files(s.ix, id)
 }
 
 // hasAll reports whether every file is stored. s.mu must be held.
@@ -358,12 +354,12 @@ func (s *Set) fetch(ctx context.Context, commit string, files []File,
 }
 
 func (s *Set) fetchOne(ctx context.Context, commit string, f File) error {
-	bs, err := s.client.File(ctx, s.repo, commit, f.Path)
+	bs, err := s.backend.Fetch(ctx, commit, f)
 	if err != nil {
 		return fmt.Errorf("下載 %s 失敗：%w", f.Path, err)
 	}
 	if BlobSHA(bs) != f.SHA {
-		return fmt.Errorf("下載 %s 失敗：內容與 GitHub 列出的不符", f.Path)
+		return fmt.Errorf("下載 %s 失敗：內容與來源列出的不符", f.Path)
 	}
 	s.store.SetBlob(f.SHA, bs)
 	s.mu.Lock()
@@ -378,16 +374,6 @@ func BlobSHA(data []byte) string {
 	fmt.Fprintf(h, "blob %d\x00", len(data))
 	h.Write(data)
 	return hex.EncodeToString(h.Sum(nil))
-}
-
-// list returns problems.json.
-func (ix *Index) list() (File, bool) {
-	for _, f := range ix.Files {
-		if f.Path == listFile {
-			return f, true
-		}
-	}
-	return File{}, false
 }
 
 // MemStore is a Store in memory.
