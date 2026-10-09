@@ -5,7 +5,9 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"path"
 	"sort"
+	"strings"
 	"sync"
 	"testing/fstest"
 	"time"
@@ -237,6 +239,9 @@ func (s *Set) Problem(ctx context.Context, id string) (*problems.Problem, error)
 		}
 		fsys[f.Path] = &fstest.MapFile{Data: bs}
 	}
+	if err := s.resolveLinks(ctx, ix, files, fsys); err != nil {
+		return nil, err
+	}
 	p, err := f.load(fsys, id, m)
 	if err != nil {
 		return nil, err
@@ -248,6 +253,39 @@ func (s *Set) Problem(ctx context.Context, id string) (*problems.Problem, error)
 		s.probs[id] = p
 	}
 	return p, nil
+}
+
+// resolveLinks replaces each symbolic link in fsys with its target's content.
+func (s *Set) resolveLinks(ctx context.Context, ix *Index, files []File, fsys fstest.MapFS) error {
+	for _, f := range files {
+		if !f.Link {
+			continue
+		}
+		cur := f
+		for range 8 { // links to links, but not loops
+			bs, ok := s.store.Blob(cur.SHA)
+			if !ok {
+				return fmt.Errorf("快取缺少 %s", cur.Path)
+			}
+			if !cur.Link {
+				fsys[f.Path] = &fstest.MapFile{Data: bs}
+				break
+			}
+			target := path.Clean(path.Join(path.Dir(cur.Path), strings.TrimSpace(string(bs))))
+			next, ok := ix.find(target)
+			if !ok {
+				return fmt.Errorf("連結 %s 指向不存在的 %s", f.Path, target)
+			}
+			if err := s.fetch(ctx, ix.Commit, []File{next}, nil); err != nil {
+				return err
+			}
+			cur = next
+		}
+		if cur.Link {
+			return fmt.Errorf("連結 %s 連結太多層", f.Path)
+		}
+	}
+	return nil
 }
 
 // DownloadAll downloads every problem, so all of them work offline.

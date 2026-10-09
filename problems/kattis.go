@@ -163,30 +163,36 @@ func kattisStatement(fsys fs.FS, id string) (string, error) {
 		ms, _ := fs.Glob(fsys, path.Join(id, dir, "problem*"))
 		files = append(files, ms...)
 	}
-	for _, ext := range []string{".md", ".tex"} {
-		byLang := map[string]string{}
-		for _, f := range files {
-			base := path.Base(f)
-			if !strings.HasSuffix(base, ext) {
-				continue
-			}
-			lang := strings.TrimPrefix(strings.TrimSuffix(base, ext), "problem")
-			byLang[strings.TrimPrefix(lang, ".")] = f
-		}
-		if len(byLang) == 0 {
+	// By language, then Markdown before LaTeX.
+	byLang := map[string]map[string]string{}
+	for _, f := range files {
+		base := path.Base(f)
+		ext := path.Ext(base)
+		if ext != ".md" && ext != ".tex" {
 			continue
 		}
-		f := byLang[pickLangKey(byLang)]
-		bs, err := fs.ReadFile(fsys, f)
-		if err != nil {
-			return "", err
+		lang := strings.TrimPrefix(strings.TrimPrefix(strings.TrimSuffix(base, ext), "problem"), ".")
+		if byLang[lang] == nil {
+			byLang[lang] = map[string]string{}
 		}
-		if ext == ".tex" {
-			return texToMarkdown(string(bs)), nil
-		}
-		return string(bs), nil
+		byLang[lang][ext] = f
 	}
-	return "", fmt.Errorf("找不到題目敘述（statement/problem.<語言>.md 或 .tex）")
+	if len(byLang) == 0 {
+		return "", fmt.Errorf("找不到題目敘述（statement/problem.<語言>.md 或 .tex）")
+	}
+	byExt := byLang[pickLangKey(byLang)]
+	f, ok := byExt[".md"]
+	if !ok {
+		f = byExt[".tex"]
+	}
+	bs, err := fs.ReadFile(fsys, f)
+	if err != nil {
+		return "", err
+	}
+	if path.Ext(f) == ".tex" {
+		return texToMarkdown(string(bs)), nil
+	}
+	return string(bs), nil
 }
 
 // kattisCases reads data/sample and data/secret; names keep their path

@@ -156,6 +156,20 @@ func TestKattisUnsupported(t *testing.T) {
 	}
 }
 
+// The language comes first: English LaTeX beats Swedish Markdown.
+func TestKattisStatementLanguage(t *testing.T) {
+	p := loadKattisFS(t, map[string]string{
+		"problem.yaml":             "name: Echo\n",
+		"statement/problem.sv.md":  "Svenska\n",
+		"statement/problem.en.tex": "\\problemname{Echo}\nEnglish\n",
+		"data/secret/1.in":         "1\n",
+		"data/secret/1.ans":        "1\n",
+	})
+	if p.Statement != "# Echo\n\nEnglish\n" {
+		t.Errorf("statement = %q", p.Statement)
+	}
+}
+
 func TestTexToMarkdown(t *testing.T) {
 	tex := "\\problemname{X}\n\\section*{Output}\n" +
 		"Print ``yes'' or \\texttt{no}, \\textbf{bold} \\emph{it} 50\\% \\(a_i\\).\n" +

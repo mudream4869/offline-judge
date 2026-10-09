@@ -16,6 +16,9 @@ type Backend interface {
 type File struct {
 	Path string // relative to the source root
 	SHA  string // git blob sha
+	// Link: a symbolic link, whose content is the target's path relative
+	// to the link's directory. Contests share tests between groups this way.
+	Link bool `json:",omitempty"`
 }
 
 // GitHub is a Backend for a directory in a GitHub repository; versions are commits.

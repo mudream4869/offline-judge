@@ -12,6 +12,7 @@ import (
 type memBackend struct {
 	version string
 	files   map[string][]byte
+	links   map[string]bool // paths that are symbolic links
 	fetched []string
 }
 
@@ -20,7 +21,7 @@ func (m *memBackend) Latest(context.Context) (string, error) { return m.version,
 func (m *memBackend) List(context.Context, string) ([]File, error) {
 	var out []File
 	for p, bs := range m.files {
-		out = append(out, File{Path: p, SHA: BlobSHA(bs)})
+		out = append(out, File{Path: p, SHA: BlobSHA(bs), Link: m.links[p]})
 	}
 	return out, nil
 }
@@ -77,6 +78,8 @@ func TestKattisSource(t *testing.T) {
 		"hello/problem_statement/problem.en.tex": "\\problemname{Hello World!}\nSay hello.\n",
 		"hello/data/secret/hello.in":             "",
 		"hello/data/secret/hello.ans":            "Hello World!\n",
+		"hello/data/secret/g2/again.in":          "../hello.in",
+		"hello/data/secret/g2/again.ans":         "../hello.ans",
 		"hello/submissions/accepted/a.py":        "print('Hello World!')",
 		"hello/input_validators/v.py":            "",
 		"guess/problem.yaml":                     "type: interactive\nname: Guess\n",
@@ -84,7 +87,9 @@ func TestKattisSource(t *testing.T) {
 		"guess/data/secret/1.in":                 "5\n",
 		"guess/output_validator/v.cc":            "",
 	}
-	b := &memBackend{version: "v1", files: map[string][]byte{}}
+	b := &memBackend{version: "v1", files: map[string][]byte{}, links: map[string]bool{
+		"hello/data/secret/g2/again.in": true, "hello/data/secret/g2/again.ans": true,
+	}}
 	for p, s := range files {
 		b.files[p] = []byte(s)
 	}
@@ -105,7 +110,9 @@ func TestKattisSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Cases) != 1 || p.Cases[0].Output != "Hello World!\n" || p.Version != es[1].Version ||
+	// The linked test has the target's content.
+	if len(p.Cases) != 2 || p.Cases[0].Name != "secret/g2/again" || p.Cases[0].Output != "Hello World!\n" ||
+		p.Cases[1].Output != "Hello World!\n" || p.Version != es[1].Version ||
 		!strings.Contains(p.Statement, "Say hello.") {
 		t.Errorf("problem = %+v", p)
 	}
