@@ -137,7 +137,7 @@ problems/0004-xxx/
     01.in / 01.out
   checker.js      選填，答案不唯一時用（見下方）；浮點數誤差等只要設 problem.json 的 compare
   interactor.js   選填，互動題用（見下方）；與 checker.js 擇一
-  solution.py     互動題必填的參考解，只給 go test 用
+  _solutions/     選填，參考解，給 scripts/bench.mjs 定時限用（見下方）；互動題必須有 ac.py
 ```
 
 ```sh
@@ -191,6 +191,21 @@ WA 時會在「比對結果」指出第一個不同的行與項。有 `checker.j
 
 推到來源的分支後，使用者下次開啟時就會拿到，不用重新 build。
 
+### 定時限
+
+在 `_solutions/` 放各語言的參考解：`ac.<副檔名>` 是預期的解法，`tle.<副檔名>` 是複雜度錯、應該超時的解法
+（副檔名 `py`、`cpp`、`js`、`go`）。資料夾以 `_` 開頭，go 工具才會忽略它，app 也不會下載。
+
+```sh
+scripts/build.sh                          # bench 用 dist/ 裡的 worker
+node scripts/bench.mjs [題目...] [--runs N] [--cap 毫秒]
+```
+
+用 headless Chromium（Playwright）跑網站本身的 worker，列出每個解法最慢的測資耗時與時限的倍數。
+ac 超時或 tle 通過時，結束碼為 1；差距不到 2 倍時會提醒。時限建議至少是 ac 的 2 倍，
+並且要明顯低於 tle（評測跑在使用者的機器上，可能比較慢）；兩者湊不出來時，應該加大測資，不要硬調時限。
+`--cap` 是砍掉程式前的等待時間（預設 10000）；`--runs` 每筆測資跑多次，ac 取最慢、tle 取最快。
+
 ### checker
 
 答案不唯一的題目放 `checker.js`，取代逐字比對（範例：`problems/0005-mode`）：
@@ -233,7 +248,7 @@ export default function interact(input) {
 - Python 與 C++ 的輸出不 flush 也送得到（C++ 的 stdout 是 line buffered）；Go 直接寫 `os.Stdout` 也是，
   但用 `bufio.Writer`（範本預設）時要在讀之前 `Flush()`。JavaScript 尚未支援
 - 跟 checker 一樣先拿掉儲存與網路 API，但跟選手程式在同一個 worker、與網站同 origin，只能算盡力而為；丟例外算評測失敗
-- `go test ./problems` 會用 Node 讓 `solution.py` 跟互動程式對答，所有測資都要通過；
+- `go test ./problems` 會用 Node 讓 `_solutions/ac.py` 跟互動程式對答，所有測資都要通過；
   這裡互動程式在程式輸出完整的一行後就被呼叫，參考解要 `flush=True`
 
 ## 開發
