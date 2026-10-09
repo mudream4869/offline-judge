@@ -307,7 +307,7 @@ export default function interact(input) {
 
 ```
 grader/py/grader.py      主程式，用 from solution import ... 呼叫選手的函式
-grader/py/template.py    選填，編輯器的預設程式碼（函式空殼）
+grader/py/template.py    選填，編輯器的預設程式碼（函式空殼）；按編輯器下方「還原預設程式碼」可回到它
 grader/cpp/grader.cpp    主程式，宣告函式原型；與選手的 solution.cpp 一起編譯連結
 grader/js/grader.js      主程式，用 require('./solution') 取得選手 module.exports 的函式
 grader/go/grader.go      主程式（package main）；與選手的 solution.go 一起編譯

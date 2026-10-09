@@ -5,7 +5,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/voilelab/toolgui/toolgui/tgcomp"
@@ -96,14 +98,21 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 
 	// One editor per problem and language, so switching keeps the code.
 	key := lg.id + "_" + pr.ID
+	resetConf := &tgcomp.ButtonConf{ID: "reset_code_" + key}
+	reset := tgcomp.ButtonClicked(p.Main, resetLabel, resetConf)
+	if reset {
+		memo.setText("code_"+key, startCode(lg, pr))
+	}
 	code := tgcomp.CodeInput(p.Main, "程式碼（"+lg.name+"）", &tgcomp.CodeInputConf{
 		ID:        "code_" + key,
 		Language:  lg.hl,
 		Height:    16,
 		MaxHeight: 40,
 		Default:   memo.getText("code_"+key, startCode(lg, pr)),
+		ResetKey:  codeResetKey(key, reset),
 	})
 	memo.setText("code_"+key, code)
+	tgcomp.Button(p.Main, resetLabel, resetConf)
 
 	// Before drawing, so every panel sees the deletion.
 	for _, s := range memo.submissions(pr.ID) {
@@ -214,6 +223,23 @@ func canRun(c *tgframe.Container, lg *lang, pr *problems.Problem) bool {
 		return false
 	}
 	return true
+}
+
+const resetLabel = "還原預設程式碼"
+
+var (
+	resetMu    sync.Mutex
+	codeResets = map[string]int{} // by editor key
+)
+
+// codeResetKey is the editor's ResetKey; bump changes it, which resets the editor.
+func codeResetKey(key string, bump bool) string {
+	resetMu.Lock()
+	defer resetMu.Unlock()
+	if bump {
+		codeResets[key]++
+	}
+	return strconv.Itoa(codeResets[key])
 }
 
 // startCode is the editor's code before any edit: the problem's template, if any.
