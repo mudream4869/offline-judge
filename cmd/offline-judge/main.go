@@ -559,44 +559,22 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	}
 
 	submitTab, customTab, histTab := tgcomp.Tab3(p.Main, "提交", "自訂輸入", "紀錄")
-	submitPanel(p, submitTab, run, lg, key, pr, code)
+	submitPanel(p, submitTab, lg, key, pr, code)
 	customPanel(p, customTab, run, lg, key, pr, code)
-	historyPanel(histTab, pr)
+	historyPanel(p.Context, histTab, pr)
 	return nil
 }
 
-func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
+func submitPanel(p *tgframe.Params, c *tgframe.Container, lg *lang,
 	key string, pr *problems.Problem, code string) {
 
 	if !canRun(c, lg, pr) {
 		return
 	}
 	if tgcomp.Button(c, "提交", &tgcomp.ButtonConf{ID: "submit_" + key}) {
-		spec := judge.Spec{Limit: pr.TimeLimitFor(lg.id), Interactor: pr.Interactor,
-			Compare: pr.Compare, Subtasks: pr.JudgeSubtasks()}
-		if pr.Checker != "" {
-			spec.Check = checkRunner().Checker(pr.Checker)
-		}
-		st := tgcomp.Status(c, "評測中…")
-		rep, err := judge.Judge(p.Context, run, code, pr.Cases, spec,
-			func(done int, cr judge.CaseResult) {
-				st.Update(fmt.Sprintf("評測中 %d/%d", done, len(pr.Cases)))
-				st.Write(fmt.Sprintf("%s：%s（%s）", cr.Name, cr.Verdict, fmtTime(cr.Time)))
-			})
-		if err != nil {
-			st.Error("評測失敗")
-			tgcomp.MessageDanger(c, err.Error())
+		if judgeAndSave(p.Context, c, lg, pr, code) == nil {
 			return
 		}
-		st.Complete("評測完成")
-		memo.addSubmission(&submission{
-			Problem: pr.ID,
-			Version: pr.Version,
-			Lang:    lg.id,
-			Code:    code,
-			At:      time.Now(),
-			Report:  slim(rep),
-		})
 	}
 
 	// Latest submission in this language.
@@ -605,6 +583,61 @@ func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 			showReport(c, pr, &s.Report, key)
 			return
 		}
+	}
+}
+
+// judgeAndSave judges code in lg against pr, showing progress in c, and
+// stores the submission. On failure it says why in c and returns nil.
+func judgeAndSave(ctx context.Context, c *tgframe.Container, lg *lang,
+	pr *problems.Problem, code string) *submission {
+
+	spec := judge.Spec{Limit: pr.TimeLimitFor(lg.id), Interactor: pr.Interactor,
+		Compare: pr.Compare, Subtasks: pr.JudgeSubtasks()}
+	if pr.Checker != "" {
+		spec.Check = checkRunner().Checker(pr.Checker)
+	}
+	st := tgcomp.Status(c, "評測中…")
+	rep, err := judge.Judge(ctx, lg.runner(), code, pr.Cases, spec,
+		func(done int, cr judge.CaseResult) {
+			st.Update(fmt.Sprintf("評測中 %d/%d", done, len(pr.Cases)))
+			st.Write(fmt.Sprintf("%s：%s（%s）", cr.Name, cr.Verdict, fmtTime(cr.Time)))
+		})
+	if err != nil {
+		st.Error("評測失敗")
+		tgcomp.MessageDanger(c, err.Error())
+		return nil
+	}
+	st.Complete("評測完成")
+	sub := &submission{
+		Problem: pr.ID,
+		Version: pr.Version,
+		Lang:    lg.id,
+		Code:    code,
+		At:      time.Now(),
+		Report:  slim(rep),
+	}
+	memo.addSubmission(sub)
+	return sub
+}
+
+// rejudgeButton offers to judge s again against pr, the current version,
+// when s was judged against another. The new submission is shown in c.
+func rejudgeButton(ctx context.Context, c *tgframe.Container, pr *problems.Problem,
+	s *submission, id string) {
+
+	lg := langByID(s.Lang)
+	if pr == nil || !outdated(s, pr.Version) || lg.newRun == nil {
+		return
+	}
+	if !tgcomp.Button(c, "用目前版本重新評測", &tgcomp.ButtonConf{ID: "rejudge_" + id}) {
+		return
+	}
+	if !canRun(c, lg, pr) {
+		return
+	}
+	if ns := judgeAndSave(ctx, c, lg, pr, s.Code); ns != nil {
+		tgcomp.Caption(c, fmt.Sprintf("已存成 #%d", ns.ID))
+		showReport(c, pr, &ns.Report, "rejudged_"+id)
 	}
 }
 
@@ -618,7 +651,7 @@ func canRun(c *tgframe.Container, lg *lang, pr *problems.Problem) bool {
 }
 
 // historyPanel lists recent submissions of a problem in all languages.
-func historyPanel(c *tgframe.Container, pr *problems.Problem) {
+func historyPanel(ctx context.Context, c *tgframe.Container, pr *problems.Problem) {
 	subs := memo.submissions(pr.ID)
 	if len(subs) == 0 {
 		tgcomp.Caption(c, "還沒有提交紀錄")
@@ -639,6 +672,7 @@ func historyPanel(c *tgframe.Container, pr *problems.Problem) {
 		box := tgcomp.Expand(c, title, false, &tgcomp.ExpandConf{ID: id})
 		tgcomp.Code(box, s.Code, &tgcomp.CodeConf{Language: lg.hl})
 		showReport(box, pr, &s.Report, id)
+		rejudgeButton(ctx, box, pr, s, id)
 		tgcomp.Button(box, delLabel, delConf(s.ID))
 	}
 }

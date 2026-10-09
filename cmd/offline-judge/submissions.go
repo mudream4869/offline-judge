@@ -196,6 +196,7 @@ func showSubmission(p *tgframe.Params, sub *submission) error {
 	}
 	tgcomp.Code(p.Main, sub.Code, &tgcomp.CodeConf{Language: lg.hl})
 	showReport(p.Main, pr, &sub.Report, fmt.Sprintf("subpage_%d", sub.ID))
+	rejudgeButton(p.Context, p.Main, pr, sub, fmt.Sprintf("subpage_%d", sub.ID))
 	tgcomp.Button(p.Main, delLabel, delConf(sub.ID))
 	return nil
 }
