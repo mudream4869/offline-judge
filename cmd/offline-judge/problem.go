@@ -99,7 +99,9 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	// Before drawing, so every panel sees the deletion.
 	for _, s := range memo.submissions(pr.ID) {
 		if tgcomp.ButtonClicked(p.Main, delLabel, delConf(s.ID)) {
-			memo.deleteSubmission(pr.ID, s.ID)
+			if err := memo.deleteSubmission(s.ID); err != nil {
+				tgcomp.MessageDanger(p.Main, "刪除失敗："+err.Error())
+			}
 		}
 	}
 
@@ -147,6 +149,7 @@ func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 	// Latest submission in this language.
 	for _, s := range memo.submissions(pr.ID) {
 		if s.Lang == lg.id {
+			warnUnsavedSubmission(c, s)
 			showReport(c, pr, &s.Report, key)
 			return
 		}
@@ -172,7 +175,7 @@ func historyPanel(c *tgframe.Container, pr *problems.Problem) {
 	tgcomp.Caption(c, fmt.Sprintf("最近 %d 筆提交，存在這個瀏覽器裡", len(subs)))
 	for _, s := range subs {
 		lg := langByID(s.Lang)
-		title := fmt.Sprintf("#%d  %s  %s  %s", s.ID, s.At.Format("2006-01-02 15:04:05"),
+		title := fmt.Sprintf("%s  %s  %s  %s", submissionNumber(s.ID), s.At.Format("2006-01-02 15:04:05"),
 			lg.name, resultText(&s.Report))
 		if s.Report.Verdict != judge.CE {
 			title += "  " + fmtTime(maxTime(&s.Report))
@@ -182,6 +185,7 @@ func historyPanel(c *tgframe.Container, pr *problems.Problem) {
 		}
 		id := fmt.Sprintf("sub_%d", s.ID)
 		box := tgcomp.Expand(c, title, false, &tgcomp.ExpandConf{ID: id})
+		warnUnsavedSubmission(box, s)
 		tgcomp.Code(box, s.Code, &tgcomp.CodeConf{Language: lg.hl})
 		showReport(box, pr, &s.Report, id)
 		tgcomp.Button(box, delLabel, delConf(s.ID))
