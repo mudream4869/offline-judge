@@ -184,3 +184,15 @@ func TestRateLimit(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestIssueURL(t *testing.T) {
+	r, err := Parse("https://github.com/a/b/tree/main/problems")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := IssueURL(r, "題目 0001 有誤", "x & y")
+	want := "https://github.com/a/b/issues/new?body=x+%26+y&title=%E9%A1%8C%E7%9B%AE+0001+%E6%9C%89%E8%AA%A4"
+	if got != want {
+		t.Errorf("IssueURL = %s, want %s", got, want)
+	}
+}

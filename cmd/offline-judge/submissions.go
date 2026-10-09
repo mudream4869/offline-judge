@@ -31,8 +31,11 @@ func Submissions(p *tgframe.Params) error {
 		p.State.Delete(pickedSubKey)
 	}
 	if sub := pickedSubmission(p); sub != nil && tgcomp.ButtonClicked(p.Main, delLabel, delConf(sub.ID)) {
-		memo.deleteSubmission(sub.Problem, sub.ID)
-		p.State.Delete(pickedSubKey)
+		if err := memo.deleteSubmission(sub.ID); err != nil {
+			tgcomp.MessageDanger(p.Main, "刪除失敗："+err.Error())
+		} else {
+			p.State.Delete(pickedSubKey)
+		}
 	}
 
 	subs := memo.allSubmissions()
@@ -106,7 +109,7 @@ func submissionList(p *tgframe.Params, subs []*submission) *submission {
 				}
 			}
 			id := strconv.Itoa(s.ID)
-			row := []string{"#" + id, s.At.Format("2006-01-02 15:04:05"), title, ver,
+			row := []string{submissionNumber(s.ID), s.At.Format("2006-01-02 15:04:05"), title, ver,
 				langByID(s.Lang).name, resultText(&s.Report), t}
 			if q != "" && !strings.Contains(strings.ToLower(strings.Join(row, "\x00")+"\x00"+s.Problem), q) {
 				continue
@@ -182,12 +185,13 @@ func showSubmission(p *tgframe.Params, sub *submission) error {
 	}
 
 	lg := langByID(sub.Lang)
-	tgcomp.Subtitle(p.Main, fmt.Sprintf("#%d  %s", sub.ID, title))
+	tgcomp.Subtitle(p.Main, fmt.Sprintf("%s  %s", submissionNumber(sub.ID), title))
 	info := fmt.Sprintf("%s，%s", sub.At.Format("2006-01-02 15:04:05"), lg.name)
 	if sub.Version != "" {
 		info += "，題目版本 " + sub.Version
 	}
 	tgcomp.Caption(p.Main, info)
+	warnUnsavedSubmission(p.Main, sub)
 	if found {
 		tgcomp.PageLink(p.Main, "前往題目", "problems", url.Values{"id": {sub.Problem}})
 	}
@@ -204,4 +208,17 @@ func showSubmission(p *tgframe.Params, sub *submission) error {
 // problem; unknown for submissions made before versions.
 func outdated(s *submission, cur string) bool {
 	return s.Version != "" && s.Version != cur
+}
+
+func submissionNumber(id int) string {
+	if id < 0 {
+		return fmt.Sprintf("暫存 #%d", -id)
+	}
+	return fmt.Sprintf("#%d", id)
+}
+
+func warnUnsavedSubmission(c *tgframe.Container, sub *submission) {
+	if sub.ID < 0 {
+		tgcomp.MessageWarning(c, "此紀錄尚未保存，重新整理後會消失")
+	}
 }
