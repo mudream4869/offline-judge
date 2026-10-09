@@ -52,12 +52,12 @@
   {
     "id": "0006-rmq",
     "title": "區間最小值",
-    "time_limit_ms": 2000,
+    "time_limit_ms": 4000,
     "time_limits_ms": {
-      "cpp": 500,
-      "js": 1000
+      "js": 1000,
+      "py": 6000
     },
-    "version": "2026-10-09 01:45:00",
+    "version": "2026-10-09 15:00:00",
     "solution_tags": [
       "資料結構",
       "線段樹"
@@ -84,12 +84,8 @@
   {
     "id": "0007-mod-inverse",
     "title": "模反元素",
-    "time_limit_ms": 2000,
-    "time_limits_ms": {
-      "cpp": 500,
-      "js": 1000
-    },
-    "version": "2026-10-09 00:00:22",
+    "time_limit_ms": 500,
+    "version": "2026-10-09 15:00:00",
     "solution_tags": [
       "取模",
       "數論",
