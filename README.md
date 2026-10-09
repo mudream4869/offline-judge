@@ -55,7 +55,9 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 | CE | 編譯錯誤（C++、Go），不執行任何測資 |
 | RE | 例外、非零 `SystemExit` 或非零 exit code（含 `process.exit`） |
 | TLE | 耗時超過限制；超過限制 +1 秒仍未結束就砍掉 worker |
-| SKIP | 第一筆 TLE 之後的測資不再執行（每次 TLE 都要重載 Pyodide） |
+| SKIP | 第一筆 TLE 之後的測資不再執行（每次 TLE 都要重載 Pyodide）；有子任務時改為跳過所屬子任務都已失敗的測資 |
+
+有子任務的題目另外計分：子任務的測資全部 AC 才拿到該子任務的分數，總分為各子任務分數相加。
 
 尚未支援 MLE。
 
@@ -154,6 +156,21 @@ go test ./problems -update   # 從每題的 problem.json 重新產生 problems.j
 `solution_tags` 選填，放會暗示解法的標籤（例如「線段樹」、「二分搜尋」），不要跟 `tags` 重複。
 預設只在題目頁收合顯示；「設定」勾選「顯示解法標籤」後，才會跟 `tags` 一起顯示在列表與題目頁，也能用來篩選。
 這個 repo 的題目 `tags` 與 `solution_tags` 至少要有一個（`go test` 會檢查）。
+
+`subtasks` 選填，把測資分組計分（參考 TIOJ；範例：`problems/0006-rmq`）：
+
+```json
+"subtasks": [
+  {"score": 40, "tests": ["01", "02", "03"], "constraints": "$N, Q \\le 1000$"},
+  {"score": 60, "tests": ["0*"]}
+]
+```
+
+- `tests` 是測資名稱或 [`path.Match`](https://pkg.go.dev/path#Match) 的樣式（例如 `1-*`），每個都要符合至少一筆測資；
+  同一筆測資可以屬於多個子任務
+- 除了 sample 以外，每筆測資都要屬於某個子任務；sample 沒列進子任務時照常執行，但不影響分數
+- `constraints` 選填（Markdown），跟分數、測資一起列在題目頁的「子任務」表格
+- 題目列表的「狀態」會顯示沒通過的題目的最高分；這個 repo 的題目分數總和要是 100（`go test` 會檢查）
 
 `compare` 選填，內建的輸出比對方式（參考 TIOJ），不用寫 checker：
 
