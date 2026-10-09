@@ -39,20 +39,19 @@ for f in pyodide.mjs pyodide.asm.mjs pyodide.asm.wasm python_stdlib.zip pyodide-
 done
 cp "$WASI"/dist/*.js "$ASSETS/wasi/"
 
-# clang and the PCH go to dist/cpp/, outside assets/: the service worker
-# precaches all of assets/, and they should only download when C++ is picked.
-LAZY=dist/cpp
+# clang, the PCH and the Go toolchain are lazy assets: the service worker
+# caches them on first fetch, so they only download when C++ or Go is picked.
+LAZY=$CACHE/lazy
 rm -rf "$LAZY"
-mkdir -p "$LAZY/clang"
-cp "$CLANG"/gen/*.js "$CLANG"/gen/*.wasm "$CLANG"/gen/*.tar "$LAZY/clang/"
+mkdir -p "$LAZY/cpp/clang"
+cp "$CLANG"/gen/*.js "$CLANG"/gen/*.wasm "$CLANG"/gen/*.tar "$LAZY/cpp/clang/"
 
 # The Go toolchain built for wasip1, plus the stdlib archives programs may
-# import (std.tar: importcfg and flat *.a files). Also lazy.
+# import (std.tar: importcfg and flat *.a files).
 GO_PKGS="bufio bytes cmp container/heap container/list container/ring errors fmt io
   maps math math/big math/bits math/rand math/rand/v2 os regexp slices sort strconv
   strings time unicode unicode/utf8"
-GOLAZY=dist/go
-rm -rf "$GOLAZY"
+GOLAZY=$LAZY/go
 mkdir -p "$GOLAZY"
 for t in compile link; do
   GOOS=wasip1 GOARCH=wasm go build -pgo=off -ldflags "-s -w" -o "$GOLAZY/$t.wasm" "cmd/$t"
@@ -76,7 +75,8 @@ if [ ! -f "$PCH" ]; then
   node scripts/mkpch.mjs "$CLANG/gen/bundle.js" web/stdc++.h "$PCH.tmp"
   mv "$PCH.tmp" "$PCH"
 fi
-cp "$PCH" "$LAZY/stdc++.h.pch"
+cp "$PCH" "$LAZY/cpp/stdc++.h.pch"
 
-go tool toolgui-wasm "$MODE" -o dist -ldflags "-s -w" -assets "$ASSETS" -offline \
-  -manifest pwa/manifest.json -icon assets/icons/favicon.ico -head pwa/head.html ./cmd/offline-judge
+rm -rf dist/cpp dist/go # left by older builds
+go tool toolgui-wasm "$MODE" -o dist -ldflags "-s -w" -assets "$ASSETS" -lazy-assets "$LAZY" -offline \
+  -manifest pwa/manifest.json -icon assets/icons/favicon.ico ./cmd/offline-judge

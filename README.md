@@ -102,8 +102,8 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 - wasi 版 libc++ 不支援例外：`throw` 直接 abort 判 RE，`catch` 不會被執行
 - 執行速度約為原生的 1/3（時間限制可依語言調整，見「新增題目」的 `time_limits_ms`）
 - 第一次選 C++ 時才下載 clang（gzip 後約 27 MB）加上 PCH（約 10 MB）；編譯一次約 1 秒
-- clang 與 PCH 放在 `dist/cpp/`，不在 `assets/` 裡，所以 `-offline` 的 service worker
-  不會預先快取它們：C++ 離線時不能用（瀏覽器的 HTTP 快取還在的話仍可能可以）
+- clang 與 PCH 是 lazy asset（`assets/cpp/`）：service worker 不預先快取，第一次用到時才存起來，
+  之後 C++ 離線也能用
 
 ## JavaScript 的限制
 
@@ -126,7 +126,7 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
   `strings` `time` `unicode` `unicode/utf8`（清單在 `scripts/build.sh` 的 `GO_PKGS`）；
   其他的會是 `could not import` 的 CE
 - wasm 的呼叫堆疊受瀏覽器限制，遞迴深度約 2 萬層（Chromium），太深會 `RangeError` 判 RE
-- 放在 `dist/go/`，跟 C++ 一樣離線時不能用
+- 放在 `assets/go/`，跟 C++ 一樣第一次用到後可離線
 
 ## 新增題目
 
@@ -279,19 +279,19 @@ scripts/build.sh serve    # http://localhost:3000
 ```
 
 `build.sh` 是包一層 toolgui 的 `go tool toolgui-wasm build|serve`，多做的事是把
-Pyodide、WASI shim 與 `web/` 準備到 `.cache/assets`，並把 clang 與 PCH 放到 `dist/cpp/`、
-`GOOS=wasip1` 的 Go compile、link 與標準函式庫（`std.tar`）放到 `dist/go/`。跑過一次 `build.sh` 後，也可以直接用：
+Pyodide、WASI shim 與 `web/` 準備到 `.cache/assets`，並把 clang 與 PCH、
+`GOOS=wasip1` 的 Go compile、link 與標準函式庫（`std.tar`）準備到 `.cache/lazy`（`-lazy-assets`）。跑過一次 `build.sh` 後，也可以直接用：
 
 ```sh
-go tool toolgui-wasm serve -o dist -assets .cache/assets ./cmd/offline-judge
+go tool toolgui-wasm serve -o dist -assets .cache/assets -lazy-assets .cache/lazy ./cmd/offline-judge
 ```
 
 直接 serve 時不帶 `-assets` 的話，頁面能開，但沒有 Python / C++ / JavaScript / Go 環境可以執行；
-`dist/cpp/`、`dist/go/` 要先由 `build.sh` 產生，C++、Go 才能用。
+不帶 `-lazy-assets` 的話 C++、Go 不能用。
 
 `dist/` 是靜態網站，可直接放到 GitHub Pages（見 `.github/workflows/pages.yml`，
 需在 repo 設定把 Pages 來源設為 GitHub Actions）。
 需要 https 或 localhost（toolgui 的 OPFS 需要 secure context）。
 
-可安裝成 web app（PWA）：manifest 在 `pwa/manifest.json`，圖示在 `pwa/icons/`（build 時複製到 `assets/icons/`），
-`pwa/head.html` 會插進 `index.html` 的 `<head>`。
+可安裝成 web app（PWA）：manifest 在 `pwa/manifest.json`，圖示在 `pwa/icons/`（build 時複製到 `assets/icons/`）；
+iOS 的 `apple-touch-icon` 等 head 標籤由 toolgui 依 manifest 產生。

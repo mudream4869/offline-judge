@@ -60,6 +60,14 @@ func spawnWorker(url string) *worker {
 	return wk
 }
 
+// await blocks until wk has loaded or failed to.
+func (wk *worker) await() {
+	select {
+	case <-wk.ready:
+	case <-wk.dead:
+	}
+}
+
 func (wk *worker) isReady() bool {
 	select {
 	case <-wk.ready:
@@ -126,10 +134,7 @@ func newPool(url, name string) *pool {
 	p := &pool{url: url, name: name, cur: spawnWorker(url)}
 	go func() {
 		// Start the spare after the first load, so they don't compete.
-		select {
-		case <-p.cur.ready:
-		case <-p.cur.dead:
-		}
+		p.cur.await()
 		p.mu.Lock()
 		if p.spare == nil {
 			p.spare = spawnWorker(p.url)
@@ -144,6 +149,13 @@ func (p *pool) Ready() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.cur.isReady()
+}
+
+func (p *pool) awaitLoad() {
+	p.mu.Lock()
+	w := p.cur
+	p.mu.Unlock()
+	w.await()
 }
 
 // replace kills the current worker and promotes the spare.

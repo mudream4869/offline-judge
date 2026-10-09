@@ -72,8 +72,7 @@ self.onmessage = async ({ data: { id, code } }) => {
 
 const ready = (async () => {
   try {
-    // The toolchain lives outside assets/ so the service worker doesn't precache it.
-    const url = (name) => new URL('../go/' + name, import.meta.url)
+    const url = (name) => new URL('./go/' + name, import.meta.url)
     const get = async (name) => {
       const resp = await fetch(url(name))
       if (!resp.ok) throw new Error(`${name}: ${resp.status}`)

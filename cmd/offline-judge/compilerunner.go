@@ -48,6 +48,13 @@ func (r *CompileRunner) Ready() bool {
 	return r.cc.isReady()
 }
 
+func (r *CompileRunner) awaitLoad() {
+	r.mu.Lock()
+	cc := r.cc
+	r.mu.Unlock()
+	cc.await()
+}
+
 func (r *CompileRunner) compile(ctx context.Context, code string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -144,10 +144,13 @@ func openSet(c *tgframe.Container, ctx context.Context) *source.Set {
 		return nil
 	}
 	if cached {
-		// Show the stored list now; a newer one shows on a later run.
+		// Show the stored list now; rerun the pages if a newer one comes.
+		old := s.Commit()
 		go func() {
 			if err := s.Refresh(context.Background()); err != nil {
 				log.Printf("檢查題目更新失敗：%v", err)
+			} else if s.Commit() != old {
+				app.RerunAll()
 			}
 		}()
 	}

@@ -13,6 +13,8 @@ import (
 type runner interface {
 	judge.Runner
 	Ready() bool
+	// awaitLoad blocks until the first load succeeds or fails.
+	awaitLoad()
 }
 
 type lang struct {
@@ -34,8 +36,15 @@ var checkRunner = sync.OnceValue(func() *CheckRunner {
 })
 
 // runner starts the runtime on first use, so unused ones aren't downloaded.
+// The problem page reruns once it loads, to update the sidebar status.
 func (l *lang) runner() runner {
-	l.once.Do(func() { l.run = l.newRun() })
+	l.once.Do(func() {
+		l.run = l.newRun()
+		go func() {
+			l.run.awaitLoad()
+			app.RerunPage("problems")
+		}()
+	})
 	return l.run
 }
 
