@@ -197,6 +197,10 @@ func rejudgeButton(ctx context.Context, c *tgframe.Container, pr *problems.Probl
 
 // canRun reports whether lg can run pr, saying why not in c.
 func canRun(c *tgframe.Container, lg *lang, pr *problems.Problem) bool {
+	if pr.Unsupported != "" {
+		tgcomp.MessageWarning(c, "無法評測："+pr.Unsupported)
+		return false
+	}
 	if pr.Interactor != "" && !lg.interactive {
 		tgcomp.MessageWarning(c, lg.name+" 還不支援互動題，請改用其他語言")
 		return false
@@ -303,6 +307,27 @@ func compareCaption(cm judge.Compare) string {
 			err = "相對誤差"
 		}
 		return fmt.Sprintf("輸出的小數與答案的%s在 %g 以內即可，其他項要相同", err, cm.Eps)
+	case judge.CompareTokens:
+		var parts []string
+		if cm.SpaceSensitive {
+			parts = append(parts, "以空白分隔逐項比對，空白要完全相同")
+		} else {
+			parts = append(parts, "以空白分隔逐項比對，空白與換行不影響判定")
+		}
+		if !cm.CaseSensitive {
+			parts = append(parts, "不分大小寫")
+		}
+		switch {
+		case cm.Abs && cm.Rel && cm.AbsTol == cm.RelTol:
+			parts = append(parts, fmt.Sprintf("小數的絕對或相對誤差在 %g 以內即可", cm.AbsTol))
+		case cm.Abs && cm.Rel:
+			parts = append(parts, fmt.Sprintf("小數的絕對誤差在 %g 或相對誤差在 %g 以內即可", cm.AbsTol, cm.RelTol))
+		case cm.Abs:
+			parts = append(parts, fmt.Sprintf("小數的絕對誤差在 %g 以內即可", cm.AbsTol))
+		case cm.Rel:
+			parts = append(parts, fmt.Sprintf("小數的相對誤差在 %g 以內即可", cm.RelTol))
+		}
+		return strings.Join(parts, "，")
 	}
 	return ""
 }

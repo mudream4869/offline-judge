@@ -92,8 +92,27 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 - 開啟過的題目可離線使用；「設定」的「全部下載」可一次下載全部題目
 
 抓取邏輯在 `internal/source`（用 Go 的 `net/http`，在瀏覽器裡走 fetch）：
-`Backend` 負責列出與下載檔案（目前只有 GitHub），format 負責把檔案變成題目（目前只有本 repo 的格式）；
+`Backend` 負責列出與下載檔案（目前只有 GitHub），format 負責把檔案變成題目（本 repo 的格式與 Kattis）；
 快取、離線與版本檢查在兩者之上共用。
+
+### Kattis 題目包
+
+來源資料夾沒有 `problems.json`、但子資料夾有 `problem.yaml` 時，每個這樣的子資料夾視為一個
+[Kattis 題目包](https://www.kattis.com/problem-package-format/)，資料夾名稱就是題目 id，
+例如 `https://github.com/Kattis/problemtools/tree/master/examples`。legacy 與 2023-07 之後的格式都可以：
+
+| Kattis | 對應 |
+| --- | --- |
+| `name`（字串或各語言） | 題目名稱，優先順序 `zh-TW`、`zh`、`en`；沒有就用資料夾名稱 |
+| `limits.time_limit` | 時間限制；legacy 格式沒有時限（原本由標準解推算），用 2 秒 |
+| `keywords` | 標籤 |
+| `statement/` 或 `problem_statement/` 的 `problem.<語言>.md`／`.tex` | 題目敘述；優先用 Markdown，`.tex` 會轉成 Markdown（章節、粗斜體、清單、簡單表格、數學式），圖片只顯示說明文字 |
+| `data/sample/`、`data/secret/` 的 `.in`／`.ans` | 測資，名稱保留路徑（如 `secret/group1/01`） |
+| 預設驗證器與 `validator_flags`／`output_validator_flags`／`output_validator_args` | `compare` 的 `tokens` 模式，參數相同 |
+| 計分題的測資組（`data/secret/<組>/`） | 子任務：組內全對才得分（legacy 的 `grader_flags: min` + `accept_score`，或 2023-07 的 `max_score`）；`require_pass` 會把需要先過的組併進來。逐筆給分的組改成只判全對，並在敘述加註 |
+| 自訂輸出驗證器、互動題、`include/`、submit-answer／multi-pass | 列表標「無法評測」，題目照樣可看 |
+
+版本沒有標準欄位，用題目用到的檔案內容算出（例如 `3f2a9c1b0d4e`），測資或敘述改了就會把舊提交標成「舊版」。
 
 ## C++ 的限制（PoC）
 
@@ -187,6 +206,7 @@ go test ./problems -update   # 從每題的 problem.json 重新產生 problems.j
 | `strict` | 逐位元組比對 |
 | `white-diff` | 逐行比對，每行以空白分隔成項，空白的數量不影響；忽略結尾空行 |
 | `float-diff [absolute\|relative\|absolute-relative] [誤差]` | 同 `white-diff`，但答案中含 `.`、`e` 或 `E` 的數字允許誤差（預設 `absolute-relative 1e-6`，絕對或相對誤差其一在範圍內即可）；整數仍要相同 |
+| `tokens [參數…]` | Kattis 預設驗證器：整份輸出以空白分隔逐項比對，不分換行、**不分大小寫**；參數同 Kattis：`case_sensitive`、`space_change_sensitive`、`float_tolerance ε`、`float_absolute_tolerance ε`、`float_relative_tolerance ε` |
 
 WA 時會在「比對結果」指出第一個不同的行與項。有 `checker.js` 或 `interactor.js` 時不能設定 `compare`。
 

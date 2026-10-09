@@ -144,7 +144,11 @@ func problemList(p *tgframe.Params, es []source.Entry) {
 			off = "✓"
 		}
 		ids = append(ids, e.ID)
-		rows = append(rows, []string{st, num, e.Title, strings.Join(tags, "、"),
+		title := e.Title
+		if e.Unsupported != "" {
+			title += "（無法評測）"
+		}
+		rows = append(rows, []string{st, num, title, strings.Join(tags, "、"),
 			fmtLimits(e.TimeLimit, e.TimeLimits), e.Version, off})
 	}
 	if len(rows) == 0 {

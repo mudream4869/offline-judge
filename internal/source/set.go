@@ -38,6 +38,7 @@ type Entry struct {
 	Version      string
 	Tags         []string
 	SolutionTags []string // hint at the solution; hidden by default
+	Unsupported  string   // why it can't be judged here; "" if it can
 	Cached       bool     // statement and tests are stored, so it works offline
 }
 
@@ -163,7 +164,7 @@ func (s *Set) setIndex(ix *Index) error {
 	for _, e := range list {
 		entries = append(entries, Entry{ID: e.ID, Title: e.Title, TimeLimit: e.TimeLimit,
 			TimeLimits: e.TimeLimits, Version: e.Version, Tags: e.Tags,
-			SolutionTags: e.SolutionTags})
+			SolutionTags: e.SolutionTags, Unsupported: e.Unsupported})
 		metas[e.ID] = e.Meta
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })

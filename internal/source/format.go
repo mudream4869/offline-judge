@@ -26,7 +26,10 @@ func formatOf(ix *Index) (format, error) {
 	if _, ok := ix.find(listFile); ok {
 		return native{}, nil
 	}
-	return nil, fmt.Errorf("來源缺少 %s", listFile)
+	if len(kattisIDs(ix)) > 0 {
+		return kattis{}, nil
+	}
+	return nil, fmt.Errorf("來源缺少 %s，也沒有 Kattis 題目包（<題目>/%s）", listFile, problems.KattisMetaFile)
 }
 
 // listFile lists the problems of a source, so the list is one download.
