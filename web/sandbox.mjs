@@ -8,7 +8,7 @@ const { Blob, URL } = self
 export function lockdown() {
   for (const name of [
     'indexedDB', 'caches', 'fetch', 'XMLHttpRequest', 'WebSocket', 'WebTransport', 'EventSource',
-    'BroadcastChannel', 'Worker', 'SharedWorker', 'importScripts', 'navigator', 'cookieStore',
+    'WebSocketStream', 'FontFace', 'BroadcastChannel', 'Worker', 'SharedWorker', 'importScripts', 'navigator', 'cookieStore',
   ]) {
     for (let o = self; o; o = Object.getPrototypeOf(o)) {
       const d = Object.getOwnPropertyDescriptor(o, name)

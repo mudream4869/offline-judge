@@ -26,6 +26,7 @@ jobs:
         with:
           node-version: 22
       - run: go test ./...
+      - run: node --test scripts/benchjudge.test.mjs
       # build.sh 存版本號；換版本就整個重抓，只改 header/flags 時沿用已下載的套件
       - uses: actions/cache@v4
         with:

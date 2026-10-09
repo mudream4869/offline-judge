@@ -153,7 +153,7 @@ for (const c of JSON.parse(readFileSync(0, 'utf8'))) {
 }
 `
 
-// TestInteractors runs each interactive problem's solution.py against its
+// TestInteractors runs each interactive problem's _solutions/ac.py against its
 // interactor.
 func TestInteractors(t *testing.T) {
 	node, err := exec.LookPath("node")
@@ -175,9 +175,9 @@ func TestInteractors(t *testing.T) {
 		if p.Interactor == "" {
 			continue
 		}
-		sol := filepath.Join(p.ID, "solution.py")
+		sol := filepath.Join(p.ID, "_solutions", "ac.py")
 		if _, err := os.Stat(sol); err != nil {
-			t.Errorf("%s: interactive problem without solution.py", p.ID)
+			t.Errorf("%s: interactive problem without _solutions/ac.py", p.ID)
 			continue
 		}
 		in, err := json.Marshal(p.Cases)

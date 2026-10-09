@@ -25,7 +25,7 @@ page ── toolgui worker (Go wasm：UI / 題目 / 比對)
             ├── gocompile.mjs  (Go compile + link：收 code，回 WebAssembly.Module 或編譯錯誤；常駐)
             ├── wasirun.mjs    (C++、Go 共用：收 module + stdin，回 stdout / stderr / 耗時)
             ├── jsrun.mjs      (收 code + stdin，回 stdout / stderr / 耗時；每次執行換新的 worker)
-            └── checker.mjs    (跑題目的 checker.js，回 AC / WA 與訊息)
+            └── checker.mjs    (轉送給 data: URL worker 裡的 checkbox.mjs，跑題目的 checker.js，回 AC / WA 與訊息)
 
 sandbox.mjs：跑題目附的 JS（checker.js、interactor.js）用，先拿掉儲存與網路 API
 ```
@@ -137,7 +137,7 @@ problems/0004-xxx/
     01.in / 01.out
   checker.js      選填，答案不唯一時用（見下方）；浮點數誤差等只要設 problem.json 的 compare
   interactor.js   選填，互動題用（見下方）；與 checker.js 擇一
-  solution.py     互動題必填的參考解，只給 go test 用
+  _solutions/     選填，參考解，給 scripts/bench.mjs 定時限用（見下方）；互動題必須有 ac.py
 ```
 
 ```sh
@@ -191,6 +191,30 @@ WA 時會在「比對結果」指出第一個不同的行與項。有 `checker.j
 
 推到來源的分支後，使用者下次開啟時就會拿到，不用重新 build。
 
+### 定時限
+
+在 `_solutions/` 放各語言的參考解：`ac.<副檔名>` 是預期的解法，`tle.<副檔名>` 是複雜度錯、應該超時的解法
+（副檔名 `py`、`cpp`、`js`、`go`）。資料夾以 `_` 開頭，go 工具才會忽略它，app 也不會下載。
+
+```sh
+scripts/build.sh                          # bench 用 dist/ 裡的 worker
+node scripts/bench.mjs [題目...] [--runs N] [--cap 毫秒]
+```
+
+用 headless Chromium（Playwright）跑網站本身的 worker，列出每個解法最慢的測資耗時與時限的倍數。
+啟動時會用 Go 編譯 `cmd/benchjudge` 到暫存目錄，每次執行的結果交給正式評測的 `judge.Judge` 判定，
+共用 `compare` 模式與互動題的判定順序。checker 也使用網站的 worker，有 5 秒上限，
+例外、逾時或無效回傳值會讓 benchmark 失敗。`--runs` 的每次執行都會判定，任何一次 WA / RE 都會讓 benchmark 失敗。
+校準時允許程式執行到 `--cap`，量到的耗時再與題目時限比較，不會在題目時限到達時就中止。
+
+```sh
+node --test scripts/benchjudge.test.mjs    # 不需要 dist/ 或瀏覽器，驗證 benchmark 的判定規則
+```
+
+ac 超時或 tle 通過時，結束碼為 1；差距不到 2 倍時會提醒。時限建議至少是 ac 的 2 倍，
+並且要明顯低於 tle（評測跑在使用者的機器上，可能比較慢）；兩者湊不出來時，應該加大測資，不要硬調時限。
+`--cap` 是砍掉程式前的等待時間（預設 10000）；`--runs` 每筆測資跑多次，ac 取最慢、tle 取最快。
+
 ### checker
 
 答案不唯一的題目放 `checker.js`，取代逐字比對（範例：`problems/0005-mode`）：
@@ -205,8 +229,8 @@ export default function check(input, output, answer) {
 
 - 選手 TLE / RE 時不會呼叫 checker
 - 在獨立的 worker 執行，每次 5 秒上限；丟例外、逾時或回傳其他型別都算評測失敗
-- 執行前先拿掉 IndexedDB、fetch、Worker 等 API，盡量讓第三方來源的 checker 碰不到使用者的資料；
-  module 的 `import` 仍可連網，所以只能算盡力而為
+- 跑在 `data:` URL 的 worker 裡，origin 是不透明的，瀏覽器不讓它碰這個網站的 IndexedDB、Cache Storage 與 OPFS；
+  另外也拿掉 fetch、Worker 等 API。module 的 `import` 仍可連網，但 checker 只拿得到測資與選手輸出
 - `go test ./problems` 會用 Node 確認每題的 `.out` 都能通過自己的 checker
 
 ### 互動題
@@ -232,8 +256,8 @@ export default function interact(input) {
 - 互動過程以 `→`（程式輸出）、`←`（互動程式回答）記錄，失敗時顯示在測資下
 - Python 與 C++ 的輸出不 flush 也送得到（C++ 的 stdout 是 line buffered）；Go 直接寫 `os.Stdout` 也是，
   但用 `bufio.Writer`（範本預設）時要在讀之前 `Flush()`。JavaScript 尚未支援
-- 跟 checker 一樣先拿掉儲存與網路 API；丟例外算評測失敗
-- `go test ./problems` 會用 Node 讓 `solution.py` 跟互動程式對答，所有測資都要通過；
+- 跟 checker 一樣先拿掉儲存與網路 API，但跟選手程式在同一個 worker、與網站同 origin，只能算盡力而為；丟例外算評測失敗
+- `go test ./problems` 會用 Node 讓 `_solutions/ac.py` 跟互動程式對答，所有測資都要通過；
   這裡互動程式在程式輸出完整的一行後就被呼叫，參考解要 `flush=True`
 
 ## 開發
