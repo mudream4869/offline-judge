@@ -223,7 +223,7 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 			st := status[e.ID]
 			if !hasTags(e.Tags, want) ||
 				!strings.Contains(strings.ToLower(num+" "+e.Title), query) ||
-				filter == 1 && st == solvedMark || filter == 2 && st != solvedMark {
+				filter == 1 && st != solvedMark || filter == 2 && st == solvedMark {
 				continue
 			}
 			off := ""
@@ -258,11 +258,12 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 }
 
 // statusFilters are the choices of the list's status filter.
-var statusFilters = []string{"全部", "未通過", "已通過"}
+var statusFilters = []string{"全部", "已通過", "尚未通過（含未提交）"}
 
+// Marks of the list's status column.
 const (
-	solvedMark = "✓" // some submission is AC
-	triedMark  = "✗" // submitted, never AC
+	solvedMark = "已通過" // some submission is AC
+	triedMark  = "未通過" // submitted, never AC
 )
 
 // solveStatus maps each submitted problem to solvedMark or triedMark.
