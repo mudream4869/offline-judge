@@ -189,7 +189,8 @@ func rejudgeButton(ctx context.Context, c *tgframe.Container, pr *problems.Probl
 		return
 	}
 	if ns := judgeAndSave(ctx, c, lg, pr, s.Code); ns != nil {
-		tgcomp.Caption(c, fmt.Sprintf("已存成 #%d", ns.ID))
+		tgcomp.Caption(c, "已存成 "+submissionNumber(ns.ID))
+		warnUnsavedSubmission(c, ns)
 		showReport(c, pr, &ns.Report, "rejudged_"+id)
 	}
 }
