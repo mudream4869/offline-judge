@@ -91,7 +91,9 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 - 未登入的 GitHub API 每小時 60 次，正常使用每次啟動 1 次
 - 開啟過的題目可離線使用；「設定」的「全部下載」可一次下載全部題目
 
-抓取邏輯在 `internal/source`（用 Go 的 `net/http`，在瀏覽器裡走 fetch）。
+抓取邏輯在 `internal/source`（用 Go 的 `net/http`，在瀏覽器裡走 fetch）：
+`Backend` 負責列出與下載檔案（目前只有 GitHub），format 負責把檔案變成題目（目前只有本 repo 的格式）；
+快取、離線與版本檢查在兩者之上共用。
 
 ## C++ 的限制（PoC）
 

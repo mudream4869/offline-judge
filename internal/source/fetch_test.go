@@ -250,7 +250,7 @@ func TestFetchProgressCancellationAndRetry(t *testing.T) {
 func TestFetchRejectsCorruptBlob(t *testing.T) {
 	s, files := fetchSet(t, 1, fileResponse)
 	files[0].SHA = BlobSHA([]byte("different content"))
-	if err := s.fetch(context.Background(), commit, files, nil); err == nil || !strings.Contains(err.Error(), "內容與 GitHub 列出的不符") {
+	if err := s.fetch(context.Background(), commit, files, nil); err == nil || !strings.Contains(err.Error(), "內容與來源列出的不符") {
 		t.Errorf("fetch = %v, want blob mismatch", err)
 	}
 	if s.have[files[0].SHA] || len(s.store.BlobSHAs()) != 0 {

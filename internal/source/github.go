@@ -1,4 +1,5 @@
-// Package source fetches problem sets from GitHub and caches them.
+// Package source fetches problem sets and caches them. Files come from a
+// Backend (GitHub for now); a format turns them into problems.
 package source
 
 import (
@@ -45,12 +46,6 @@ func Parse(s string) (Repo, error) {
 		return Repo{}, fmt.Errorf("網址要是 repo 或 /tree/<分支>/<資料夾>：%s", s)
 	}
 	return r, nil
-}
-
-// File is a file under Repo.Dir.
-type File struct {
-	Path string // relative to Repo.Dir
-	SHA  string // git blob sha
 }
 
 // Client talks to GitHub. Only Commit and Tree count toward the API rate
