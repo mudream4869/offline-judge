@@ -11,6 +11,7 @@ import (
 	"github.com/voilelab/toolgui/toolgui/tgframe"
 
 	"github.com/mudream4869/offline-judge/internal/judge"
+	"github.com/mudream4869/offline-judge/internal/source"
 	"github.com/mudream4869/offline-judge/problems"
 )
 
@@ -82,6 +83,9 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 		h := tgcomp.Expand(p.Main, "解法標籤（點開會暴雷）", false, &tgcomp.ExpandConf{ID: "soltags_" + pr.ID})
 		tgcomp.Text(h, strings.Join(pr.SolutionTags, "、"))
 	}
+	if u := reportURL(pr); u != "" {
+		tgcomp.Link(p.Main, "回報題目問題（GitHub issue）", u)
+	}
 
 	tgcomp.Divider(p.Main)
 
@@ -99,7 +103,9 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	// Before drawing, so every panel sees the deletion.
 	for _, s := range memo.submissions(pr.ID) {
 		if tgcomp.ButtonClicked(p.Main, delLabel, delConf(s.ID)) {
-			memo.deleteSubmission(pr.ID, s.ID)
+			if err := memo.deleteSubmission(s.ID); err != nil {
+				tgcomp.MessageDanger(p.Main, "刪除失敗："+err.Error())
+			}
 		}
 	}
 
@@ -147,6 +153,7 @@ func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 	// Latest submission in this language.
 	for _, s := range memo.submissions(pr.ID) {
 		if s.Lang == lg.id {
+			warnUnsavedSubmission(c, s)
 			showReport(c, pr, &s.Report, key)
 			return
 		}
@@ -172,7 +179,7 @@ func historyPanel(c *tgframe.Container, pr *problems.Problem) {
 	tgcomp.Caption(c, fmt.Sprintf("最近 %d 筆提交，存在這個瀏覽器裡", len(subs)))
 	for _, s := range subs {
 		lg := langByID(s.Lang)
-		title := fmt.Sprintf("#%d  %s  %s  %s", s.ID, s.At.Format("2006-01-02 15:04:05"),
+		title := fmt.Sprintf("%s  %s  %s  %s", submissionNumber(s.ID), s.At.Format("2006-01-02 15:04:05"),
 			lg.name, resultText(&s.Report))
 		if s.Report.Verdict != judge.CE {
 			title += "  " + fmtTime(maxTime(&s.Report))
@@ -182,6 +189,7 @@ func historyPanel(c *tgframe.Container, pr *problems.Problem) {
 		}
 		id := fmt.Sprintf("sub_%d", s.ID)
 		box := tgcomp.Expand(c, title, false, &tgcomp.ExpandConf{ID: id})
+		warnUnsavedSubmission(box, s)
 		tgcomp.Code(box, s.Code, &tgcomp.CodeConf{Language: lg.hl})
 		showReport(box, pr, &s.Report, id)
 		tgcomp.Button(box, delLabel, delConf(s.ID))
@@ -279,4 +287,23 @@ func subtaskTable(subs []problems.Subtask) string {
 			strings.Join(st.Cases, "、"), cell.Replace(st.Constraints))
 	}
 	return b.String()
+}
+
+// reportURL links to a new issue about pr on the source's repository,
+// prefilled with what identifies the problem; "" if the source isn't valid.
+func reportURL(pr *problems.Problem) string {
+	src := sourceURL()
+	r, err := source.Parse(src)
+	if err != nil {
+		return ""
+	}
+	at := ""
+	setMu.Lock()
+	if curSet != nil && curSet.URL == src && curSet.Commit() != "" {
+		at = "（commit " + curSet.Commit()[:7] + "）"
+	}
+	setMu.Unlock()
+	body := fmt.Sprintf("題目：%s（%s）\n版本：%s\n來源：%s%s\n\n## 問題描述\n\n",
+		pr.Title, pr.ID, pr.Version, src, at)
+	return source.IssueURL(r, "題目 "+problemNumber(pr.ID)+" "+pr.Title+"：", body)
 }

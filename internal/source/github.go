@@ -169,3 +169,10 @@ func (c *Client) get(ctx context.Context, u, accept string) ([]byte, error) {
 }
 
 func esc(s string) string { return url.PathEscape(s) }
+
+// IssueURL returns a link that opens a new issue on r's repository,
+// prefilled with title and body.
+func IssueURL(r Repo, title, body string) string {
+	q := url.Values{"title": {title}, "body": {body}}
+	return fmt.Sprintf("https://github.com/%s/%s/issues/new?%s", esc(r.Owner), esc(r.Name), q.Encode())
+}

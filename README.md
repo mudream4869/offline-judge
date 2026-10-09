@@ -72,7 +72,10 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 
 `drafts` 另外存 `source`（題目來源）。
 
-「紀錄」分頁顯示該題最近 50 筆提交，每筆可展開刪除；「提交紀錄」頁面列出所有題目的全部提交。IndexedDB 無法使用（例如被瀏覽器封鎖）時照常運作，只是不會保存。
+「紀錄」分頁顯示該題最近 50 筆提交，每筆可展開刪除；「提交紀錄」頁面列出所有題目的全部提交。
+寫入會等 IndexedDB transaction 提交才算保存成功。IndexedDB 無法使用或寫入失敗時，紀錄保留在記憶體，
+標示「暫存」並提醒重新整理後會消失；恢復寫入後，新紀錄照常保存，既有暫存紀錄仍只留在這次開啟的頁面。
+刪除暫存紀錄只移除記憶體裡的那筆；持久化紀錄刪除失敗時保留顯示，可再次嘗試。
 
 ## 題目來源
 
@@ -154,7 +157,7 @@ go test ./problems -update   # 從每題的 problem.json 重新產生 problems.j
 
 `tags` 選填，會顯示在題目列表與題目頁，列表可依標籤篩選（選多個時只列出同時有這些標籤的題目）。
 
-`solution_tags` 選填，放會暗示解法的標籤（例如「線段樹」、「二分搜尋」），不要跟 `tags` 重複。
+`tags` 只放不暴雷的題目性質（例如「入門」、「互動」、「多解」）；`solution_tags` 選填，放會暗示解法或領域的標籤（例如「取模」、「數論」、「資料結構」、「線段樹」），不要跟 `tags` 重複。
 預設只在題目頁收合顯示；「設定」勾選「顯示解法標籤」後，才會跟 `tags` 一起顯示在列表與題目頁，也能用來篩選。
 這個 repo 的題目 `tags` 與 `solution_tags` 至少要有一個（`go test` 會檢查）。
 
@@ -191,6 +194,8 @@ WA 時會在「比對結果」指出第一個不同的行與項。有 `checker.j
 ```
 
 推到來源的分支後，使用者下次開啟時就會拿到，不用重新 build。
+
+題目頁底部有「回報題目問題」連結，開啟來源 repo 的新 issue，標題與內容預先填好題號、版本與來源 commit。
 
 ### 定時限
 
@@ -267,6 +272,7 @@ export default function interact(input) {
 
 ```sh
 go test ./...
+node scripts/test-browser.mjs   # Playwright Chromium：真正 IndexedDB 的 js/wasm Go 測試
 scripts/build.sh          # 輸出到 dist/
 scripts/build.sh serve    # http://localhost:3000
 ```

@@ -12,7 +12,6 @@ import (
 	"syscall/js"
 	"time"
 
-	"github.com/mudream4869/offline-judge/internal/judge"
 	"github.com/mudream4869/offline-judge/internal/source"
 )
 
@@ -131,11 +130,61 @@ func request(name, mode string, f func(s js.Value) js.Value) (js.Value, error) {
 	if err != nil {
 		return js.Value{}, err
 	}
+	var tx *transactionWaiter
+	if mode == "readwrite" {
+		tx = watchTransaction(s.Get("transaction"))
+		defer tx.close()
+	}
 	req, err := jsTry(func() js.Value { return f(s) })
 	if err != nil {
+		if tx != nil {
+			_, _ = jsTry(func() js.Value { return tx.tx.Call("abort") })
+		}
 		return js.Value{}, err
 	}
+	if tx != nil {
+		if err := <-tx.done; err != nil {
+			return js.Value{}, err
+		}
+		if v := req.Get("error"); v.Truthy() {
+			return js.Value{}, jsErr(v)
+		}
+		return req.Get("result"), nil
+	}
 	return await(req)
+}
+
+// A successful request can still be rolled back. Writes wait for commit.
+type transactionWaiter struct {
+	tx              js.Value
+	done            chan error
+	complete, abort js.Func
+}
+
+func watchTransaction(tx js.Value) *transactionWaiter {
+	w := &transactionWaiter{tx: tx, done: make(chan error, 1)}
+	w.complete = js.FuncOf(func(js.Value, []js.Value) any {
+		w.done <- nil
+		return nil
+	})
+	w.abort = js.FuncOf(func(js.Value, []js.Value) any {
+		err := errors.New("IndexedDB transaction aborted")
+		if v := tx.Get("error"); v.Truthy() {
+			err = jsErr(v)
+		}
+		w.done <- err
+		return nil
+	})
+	tx.Set("oncomplete", w.complete)
+	tx.Set("onabort", w.abort)
+	return w
+}
+
+func (w *transactionWaiter) close() {
+	w.tx.Set("oncomplete", js.Null())
+	w.tx.Set("onabort", js.Null())
+	w.complete.Release()
+	w.abort.Release()
 }
 
 // logDBErr logs err, except errNoDB which db() already logged.
@@ -163,17 +212,6 @@ func saveDraft(key, text string) {
 	logDBErr("寫入", err)
 }
 
-// submission is one judged submission.
-type submission struct {
-	ID      int
-	Problem string
-	Version string // problem version judged against; "" for older submissions
-	Lang    string // lang.id
-	Code    string
-	At      time.Time
-	Report  judge.Report
-}
-
 // saveSubmission stores s and sets its ID.
 func saveSubmission(s *submission) error {
 	rep, err := json.Marshal(s.Report)
@@ -197,11 +235,11 @@ func saveSubmission(s *submission) error {
 	return nil
 }
 
-func deleteSubmission(id int) {
+func deleteSubmission(id int) error {
 	_, err := request(subStore, "readwrite", func(s js.Value) js.Value {
 		return s.Call("delete", id)
 	})
-	logDBErr("刪除", err)
+	return err
 }
 
 // loadSubmissions returns up to n submissions of a problem, newest first.

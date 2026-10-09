@@ -4,20 +4,20 @@ package main
 
 import (
 	"sync"
+
+	"github.com/mudream4869/offline-judge/internal/submissions"
 )
 
 // memo caches drafts and submissions, backed by IndexedDB.
 // toolgui starts each page with an empty state, so pages read from here.
-var memo = &store{text: map[string]string{}, subs: map[string][]*submission{}}
+var memo = &store{text: map[string]string{}, history: submissions.New(submissionDB{})}
 
-// Submissions kept per problem in memory and shown in history.
-const historyLimit = 50
+type submission = submissions.Submission
 
 type store struct {
-	mu   sync.Mutex
-	text map[string]string
-	subs map[string][]*submission // by problem, newest first
-	all  []*submission            // every problem, newest first; nil until loaded
+	mu      sync.Mutex
+	text    map[string]string
+	history *submissions.Store
 }
 
 func (s *store) getLang() int {
@@ -61,74 +61,44 @@ func (s *store) setText(key, v string) {
 }
 
 func (s *store) submissions(problem string) []*submission {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.loadSubs(problem)
+	return s.history.ForProblem(problem)
 }
 
-func (s *store) loadSubs(problem string) []*submission {
-	if subs, ok := s.subs[problem]; ok {
-		return subs
-	}
-	subs, err := loadSubmissions(problem, historyLimit)
-	logDBErr("讀取", err)
-	s.subs[problem] = subs
-	return subs
-}
-
-// allSubmissions returns the submissions of every problem, newest first.
 func (s *store) allSubmissions() []*submission {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.loadAll()
-}
-
-func (s *store) loadAll() []*submission {
-	if s.all == nil {
-		all, err := loadAllSubmissions()
-		logDBErr("讀取", err)
-		s.all = append([]*submission{}, all...) // non-nil: loaded
-	}
-	return s.all
+	return s.history.All()
 }
 
 func (s *store) addSubmission(sub *submission) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	subs := s.loadSubs(sub.Problem)
-	if err := saveSubmission(sub); err != nil {
-		logDBErr("寫入", err)
-		// Unsaved: number it after the newest so it still shows.
-		sub.ID = 1
-		if all := s.loadAll(); len(all) > 0 {
-			sub.ID = all[0].ID + 1
-		}
-	}
-	subs = append([]*submission{sub}, subs...)
-	if len(subs) > historyLimit {
-		subs = subs[:historyLimit]
-	}
-	s.subs[sub.Problem] = subs
-	if s.all != nil {
-		s.all = append([]*submission{sub}, s.all...)
-	}
+	s.history.Add(sub)
 }
 
-func (s *store) deleteSubmission(problem string, id int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	deleteSubmission(id)
-	subs := s.loadSubs(problem)
-	for i, sub := range subs {
-		if sub.ID == id {
-			s.subs[problem] = append(subs[:i:i], subs[i+1:]...)
-			break
-		}
-	}
-	for i, sub := range s.all {
-		if sub.ID == id {
-			s.all = append(s.all[:i:i], s.all[i+1:]...)
-			break
-		}
-	}
+func (s *store) deleteSubmission(id int) error {
+	return s.history.Delete(id)
+}
+
+// submissionDB adapts IndexedDB to the browser-independent history store.
+type submissionDB struct{}
+
+func (submissionDB) Load(problem string, limit int) ([]*submission, error) {
+	rows, err := loadSubmissions(problem, limit)
+	logDBErr("讀取", err)
+	return rows, err
+}
+
+func (submissionDB) LoadAll() ([]*submission, error) {
+	rows, err := loadAllSubmissions()
+	logDBErr("讀取", err)
+	return rows, err
+}
+
+func (submissionDB) Save(sub *submission) error {
+	err := saveSubmission(sub)
+	logDBErr("寫入", err)
+	return err
+}
+
+func (submissionDB) Delete(id int) error {
+	err := deleteSubmission(id)
+	logDBErr("刪除", err)
+	return err
 }
