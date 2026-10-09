@@ -3,6 +3,7 @@ package judge
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 )
@@ -156,5 +157,80 @@ func TestJudgeInteractive(t *testing.T) {
 	if _, err := Judge(context.Background(), r, "", []Case{{Input: "none"}},
 		Spec{Limit: time.Second, Interactor: "x"}, nil); err == nil {
 		t.Error("missing verdict not reported")
+	}
+}
+
+// countRunner counts runs of each input.
+type countRunner struct {
+	fakeRunner
+	runs map[string]int
+}
+
+func (c *countRunner) Run(ctx context.Context, code string, in Input, limit time.Duration) (RunResult, error) {
+	c.runs[in.Stdin]++
+	return c.fakeRunner.Run(ctx, code, in, limit)
+}
+
+func TestJudgeSubtasks(t *testing.T) {
+	ok := RunResult{Status: RunOK, Stdout: "1"}
+	r := &countRunner{fakeRunner: fakeRunner{
+		"s":  ok,
+		"a1": ok, "a2": ok,
+		"b1": {Status: RunTimeout}, "b2": ok,
+		"c1": ok, "c2": {Status: RunOK, Stdout: "2"},
+	}, runs: map[string]int{}}
+	var cases []Case
+	for _, n := range []string{"s", "a1", "a2", "b1", "b2", "c1", "c2"} {
+		cases = append(cases, Case{Name: n, Input: n, Output: "1"})
+	}
+	spec := Spec{Limit: time.Second, Subtasks: []Subtask{
+		{Score: 20, Cases: []string{"a1", "a2"}},
+		{Score: 30, Cases: []string{"a1", "a2", "b1", "b2"}}, // b1 TLE: b2 is skipped
+		{Score: 50, Cases: []string{"b2", "c1", "c2"}},       // still runs b2 for this one
+	}}
+	rep, err := Judge(context.Background(), r, "", cases, spec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Verdict{AC, AC, AC, TLE, AC, AC, WA}
+	for i, cr := range rep.Cases {
+		if cr.Verdict != want[i] {
+			t.Errorf("case %s: got %s, want %s", cr.Name, cr.Verdict, want[i])
+		}
+	}
+	if rep.Verdict != TLE || rep.Score != 20 || rep.MaxScore != 100 {
+		t.Errorf("got %s %v/%v, want TLE 20/100", rep.Verdict, rep.Score, rep.MaxScore)
+	}
+	wantSubs := []SubtaskResult{{20, 20, AC}, {0, 30, TLE}, {0, 50, WA}}
+	if !slices.Equal(rep.Subtasks, wantSubs) {
+		t.Errorf("subtasks = %+v, want %+v", rep.Subtasks, wantSubs)
+	}
+
+	// Once b2's only subtask fails, it is skipped.
+	spec.Subtasks = spec.Subtasks[:2]
+	rep, err = Judge(context.Background(), r, "", cases, spec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Cases[4].Verdict != Skip || rep.Cases[5].Verdict != AC {
+		t.Errorf("got %+v, want b2 skipped and c1 (in no subtask) run", rep.Cases)
+	}
+	if r.runs["b2"] != 1 {
+		t.Errorf("b2 ran %d times, want 1 (only in the first judge)", r.runs["b2"])
+	}
+	if rep.Subtasks[1].Verdict != TLE {
+		t.Errorf("subtask 2: got %s, want TLE (not SKIP)", rep.Subtasks[1].Verdict)
+	}
+}
+
+func TestJudgeSubtasksCE(t *testing.T) {
+	r := fakeRunner{"a": {Status: RunCompileError}}
+	rep, err := Judge(context.Background(), r, "", []Case{{Name: "a", Input: "a"}},
+		Spec{Limit: time.Second, Subtasks: []Subtask{{Score: 100, Cases: []string{"a"}}}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Verdict != CE || rep.Score != 0 || rep.MaxScore != 100 {
+		t.Errorf("got %+v, want CE 0/100", rep)
 	}
 }

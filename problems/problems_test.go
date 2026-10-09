@@ -43,6 +43,15 @@ func TestAll(t *testing.T) {
 				t.Errorf("%s: %q in both tags and solution_tags", p.ID, tag)
 			}
 		}
+		if len(p.Subtasks) > 0 {
+			total := 0.0
+			for _, st := range p.Subtasks {
+				total += st.Score
+			}
+			if total != 100 {
+				t.Errorf("%s: subtask scores sum to %v, want 100", p.ID, total)
+			}
+		}
 		for lang := range p.TimeLimits {
 			if !langIDs[lang] {
 				t.Errorf("%s: unknown language in time_limits_ms: %q", p.ID, lang)
@@ -60,7 +69,7 @@ func TestAll(t *testing.T) {
 				t.Errorf("%s/%s: empty output", p.ID, c.Name)
 			}
 			// Sanity: an output always matches itself.
-			if !judge.Equal(c.Output, c.Output) {
+			if ok, _ := p.Compare.Check(c.Output, c.Output); !ok {
 				t.Errorf("%s/%s: output does not match itself", p.ID, c.Name)
 			}
 		}
@@ -234,6 +243,56 @@ func TestTimeLimitFor(t *testing.T) {
 	} {
 		if got := p.TimeLimitFor(lang); got != want {
 			t.Errorf("TimeLimitFor(%q) = %v, want %v", lang, got, want)
+		}
+	}
+}
+
+func TestParseMetaCompare(t *testing.T) {
+	m, err := ParseMeta([]byte(`{"title": "x", "compare": "float-diff absolute 1e-4"}`))
+	if err != nil || m.Compare.String() != "float-diff absolute 0.0001" {
+		t.Errorf("ParseMeta = %v, %v", m.Compare, err)
+	}
+	if _, err := ParseMeta([]byte(`{"title": "x", "compare": "nope"}`)); err == nil {
+		t.Error("ParseMeta accepted an unknown compare")
+	}
+	if _, err := ParseList([]byte(`[{"id": "a", "title": "x", "compare": "nope"}]`)); err == nil {
+		t.Error("ParseList accepted an unknown compare")
+	}
+}
+
+func TestResolveSubtasks(t *testing.T) {
+	cases := []judge.Case{{Name: "sample1"}, {Name: "1-01"}, {Name: "1-02"}, {Name: "2-01"}}
+	subs, err := resolveSubtasks([]SubtaskSpec{
+		{Score: 30, Tests: []string{"1-*"}, Constraints: "$n \\le 10$"},
+		{Score: 70, Tests: []string{"1-*", "2-01", "1-01"}},
+	}, cases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subs) != 2 || !slices.Equal(subs[0].Cases, []string{"1-01", "1-02"}) ||
+		!slices.Equal(subs[1].Cases, []string{"1-01", "1-02", "2-01"}) ||
+		subs[0].Score != 30 || subs[0].Constraints != "$n \\le 10$" {
+		t.Errorf("got %+v", subs)
+	}
+
+	for _, specs := range [][]SubtaskSpec{
+		{{Score: 100, Tests: []string{"1-*"}}},           // 2-01 in no subtask
+		{{Score: 100, Tests: []string{"[12]-*", "3-*"}}}, // 3-* matches nothing
+	} {
+		if _, err := resolveSubtasks(specs, cases); err == nil {
+			t.Errorf("resolveSubtasks(%+v) accepted", specs)
+		}
+	}
+}
+
+func TestParseMetaSubtasks(t *testing.T) {
+	for _, bad := range []string{
+		`{"subtasks": [{"score": 0, "tests": ["*"]}]}`,
+		`{"subtasks": [{"score": 10, "tests": []}]}`,
+		`{"subtasks": [{"score": 10, "tests": ["["]}]}`,
+	} {
+		if _, err := ParseMeta([]byte(bad)); err == nil {
+			t.Errorf("ParseMeta(%s) accepted", bad)
 		}
 	}
 }

@@ -5,7 +5,8 @@
 //	problems.json       every problem.json in one list, made by MakeList
 //	<id>/problem.json   {"title": "...", "time_limit_ms": 1000, "time_limits_ms": {"cpp": 500},
 //	                     "version": "2026-10-08 15:04:05", "tags": ["..."],
-//	                     "solution_tags": ["..."]}
+//	                     "solution_tags": ["..."], "compare": "float-diff 1e-6",
+//	                     "subtasks": [{"score": 40, "tests": ["0[1-3]"], "constraints": "..."}]}
 //	<id>/statement.md   a "## 提示" section becomes Hint
 //	<id>/checker.js     optional; judges outputs instead of an exact match
 //	<id>/interactor.js  optional; makes the problem interactive, .out optional
@@ -18,6 +19,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -39,10 +41,27 @@ type Problem struct {
 	// SolutionTags hint at the solution, so they are hidden by default.
 	SolutionTags []string
 	Cases        []judge.Case
-	Checker      string // checker.js source; empty for an exact match
+	Compare      judge.Compare // built-in comparison, used without Checker
+	Checker      string        // checker.js source; empty for Compare
 	// Interactor is interactor.js source; empty unless interactive. Then
 	// each case's Input is the interactor's input.
 	Interactor string
+	Subtasks   []Subtask // empty: all or nothing
+}
+
+// Subtask is a scored group of cases.
+type Subtask struct {
+	judge.Subtask
+	Constraints string // markdown; may be empty
+}
+
+// JudgeSubtasks returns the subtasks for judge.Spec.
+func (p *Problem) JudgeSubtasks() []judge.Subtask {
+	var out []judge.Subtask
+	for _, st := range p.Subtasks {
+		out = append(out, st.Subtask)
+	}
+	return out
 }
 
 // TimeLimitFor returns the time limit of language lang.
@@ -73,6 +92,16 @@ type Meta struct {
 	Tags       []string
 	// SolutionTags hint at the solution, so they are hidden by default.
 	SolutionTags []string
+	Compare      judge.Compare
+	Subtasks     []SubtaskSpec
+}
+
+// SubtaskSpec is a subtask in problem.json.
+type SubtaskSpec struct {
+	Score float64 `json:"score"`
+	// Tests are test names or path.Match patterns, e.g. "01" or "1-*".
+	Tests       []string `json:"tests"`
+	Constraints string   `json:"constraints,omitempty"`
 }
 
 type meta struct {
@@ -82,6 +111,8 @@ type meta struct {
 	Version      string         `json:"version,omitempty"`
 	Tags         []string       `json:"tags,omitempty"`
 	SolutionTags []string       `json:"solution_tags,omitempty"`
+	Compare      string         `json:"compare,omitempty"`
+	Subtasks     []SubtaskSpec  `json:"subtasks,omitempty"`
 }
 
 // ParseMeta parses problem.json.
@@ -90,10 +121,10 @@ func ParseMeta(bs []byte) (Meta, error) {
 	if err := json.Unmarshal(bs, &m); err != nil {
 		return Meta{}, err
 	}
-	return m.parse(), nil
+	return m.parse()
 }
 
-func (m meta) parse() Meta {
+func (m meta) parse() (Meta, error) {
 	if m.TimeLimitMS <= 0 {
 		m.TimeLimitMS = 1000
 	}
@@ -107,6 +138,20 @@ func (m meta) parse() Meta {
 		}
 		limits[lang] = time.Duration(ms) * time.Millisecond
 	}
+	cmp, err := judge.ParseCompare(m.Compare)
+	if err != nil {
+		return Meta{}, err
+	}
+	for i, st := range m.Subtasks {
+		if !(st.Score > 0) || len(st.Tests) == 0 {
+			return Meta{}, fmt.Errorf("子任務 %d 要有正的 score 與 tests", i+1)
+		}
+		for _, pat := range st.Tests {
+			if _, err := path.Match(pat, ""); err != nil {
+				return Meta{}, fmt.Errorf("子任務 %d 的 tests 有誤：%q", i+1, pat)
+			}
+		}
+	}
 	return Meta{
 		Title:        m.Title,
 		TimeLimit:    time.Duration(m.TimeLimitMS) * time.Millisecond,
@@ -114,7 +159,9 @@ func (m meta) parse() Meta {
 		Version:      m.Version,
 		Tags:         m.Tags,
 		SolutionTags: m.SolutionTags,
-	}
+		Compare:      cmp,
+		Subtasks:     m.Subtasks,
+	}, nil
 }
 
 // Entry is a problem in problems.json.
@@ -147,6 +194,9 @@ func MakeList(fsys fs.FS) ([]byte, error) {
 		if err := json.Unmarshal(bs, &m); err != nil {
 			return nil, fmt.Errorf("%s/problem.json: %w", d.Name(), err)
 		}
+		if _, err := m.parse(); err != nil {
+			return nil, fmt.Errorf("%s/problem.json: %w", d.Name(), err)
+		}
 		list = append(list, entry{ID: d.Name(), meta: m})
 	}
 	bs, err := json.MarshalIndent(list, "", "  ")
@@ -167,7 +217,11 @@ func ParseList(bs []byte) ([]Entry, error) {
 		if e.ID == "" || strings.Contains(e.ID, "/") {
 			return nil, fmt.Errorf("題目 id 有誤：%q", e.ID)
 		}
-		out[i] = Entry{ID: e.ID, Meta: e.meta.parse()}
+		m, err := e.meta.parse()
+		if err != nil {
+			return nil, fmt.Errorf("題目 %s：%w", e.ID, err)
+		}
+		out[i] = Entry{ID: e.ID, Meta: m}
 	}
 	return out, nil
 }
@@ -233,8 +287,16 @@ func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 	if checker != "" && interactor != "" {
 		return nil, fmt.Errorf("%s 與 %s 只能有一個", CheckerFile, InteractorFile)
 	}
+	if !m.Compare.IsDefault() && (checker != "" || interactor != "") {
+		return nil, fmt.Errorf("有 %s 或 %s 時不能設定 compare", CheckerFile, InteractorFile)
+	}
 
 	cases, err := loadCases(fsys, path.Join(id, "tests"), interactor != "")
+	if err != nil {
+		return nil, err
+	}
+
+	subtasks, err := resolveSubtasks(m.Subtasks, cases)
 	if err != nil {
 		return nil, err
 	}
@@ -251,9 +313,46 @@ func loadOne(fsys fs.FS, id string, m Meta) (*Problem, error) {
 		Tags:         m.Tags,
 		SolutionTags: m.SolutionTags,
 		Cases:        cases,
+		Compare:      m.Compare,
 		Checker:      checker,
 		Interactor:   interactor,
+		Subtasks:     subtasks,
 	}, nil
+}
+
+// resolveSubtasks matches specs' tests against cases. Every pattern must
+// match a case, and every case but samples must be in a subtask.
+func resolveSubtasks(specs []SubtaskSpec, cases []judge.Case) ([]Subtask, error) {
+	if len(specs) == 0 {
+		return nil, nil
+	}
+	used := map[string]bool{}
+	var out []Subtask
+	for i, sp := range specs {
+		st := Subtask{Subtask: judge.Subtask{Score: sp.Score}, Constraints: sp.Constraints}
+		for _, pat := range sp.Tests {
+			n := 0
+			for _, c := range cases {
+				if ok, _ := path.Match(pat, c.Name); ok {
+					n++
+					used[c.Name] = true
+					if !slices.Contains(st.Cases, c.Name) {
+						st.Cases = append(st.Cases, c.Name)
+					}
+				}
+			}
+			if n == 0 {
+				return nil, fmt.Errorf("子任務 %d 的 %q 沒有符合的測資", i+1, pat)
+			}
+		}
+		out = append(out, st)
+	}
+	for _, c := range cases {
+		if !used[c.Name] && !strings.HasPrefix(c.Name, "sample") {
+			return nil, fmt.Errorf("測資 %s 不屬於任何子任務", c.Name)
+		}
+	}
+	return out, nil
 }
 
 // CheckerFile and InteractorFile are optional files of a problem.

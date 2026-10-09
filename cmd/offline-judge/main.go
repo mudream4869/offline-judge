@@ -187,6 +187,7 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 	showSol := showSolutionTags()
 	var query string
 	var want []string
+	filter := 0
 	side.With(func(c *tgframe.Container) {
 		query = strings.ToLower(strings.TrimSpace(tgcomp.Textbox(c, "搜尋", &tgcomp.TextboxConf{
 			Base:        tgframe.Base{ID: "problem_search"},
@@ -200,7 +201,13 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 				want = append(want, tags[i])
 			}
 		}
+		if i := tgcomp.Select(c, "狀態", statusFilters, (&tgcomp.SelectConf{
+			Base: tgframe.Base{ID: "problem_status"},
+		}).SetDefault(0)); i != nil {
+			filter = *i
+		}
 	})
+	status := solveStatus(memo.allSubmissions())
 
 	slot := tgcomp.Empty(p.Main)
 	var shown []*source.Entry
@@ -215,8 +222,10 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 			e := &es[i]
 			num := problemNumber(e.ID)
 			tags := entryTags(e, showSol)
+			st := status[e.ID]
 			if !hasTags(tags, want) ||
-				!strings.Contains(strings.ToLower(num+" "+e.Title), query) {
+				!strings.Contains(strings.ToLower(num+" "+e.Title), query) ||
+				filter == 1 && st != solvedMark || filter == 2 && st == solvedMark {
 				continue
 			}
 			off := ""
@@ -225,14 +234,14 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 			}
 			shown = append(shown, e)
 			ids = append(ids, e.ID)
-			rows = append(rows, []string{num, e.Title, strings.Join(tags, "、"),
+			rows = append(rows, []string{st, num, e.Title, strings.Join(tags, "、"),
 				fmtLimits(e.TimeLimit, e.TimeLimits), e.Version, off})
 		}
 		if len(rows) == 0 {
 			tgcomp.MessageInfo(c, "沒有符合的題目")
 			return
 		}
-		sel = tgcomp.DataFrame(c, []string{"編號", "題目", "標籤", "時間限制", "版本", "可離線"}, rows,
+		sel = tgcomp.DataFrame(c, []string{"狀態", "編號", "題目", "標籤", "時間限制", "版本", "可離線"}, rows,
 			(&tgcomp.DataFrameConf{
 				Base:      tgframe.Base{ID: "problem_list"},
 				PageSize:  100,
@@ -248,6 +257,36 @@ func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
 	side.Clear()
 	p.State.Set(pickedKey, shown[sel[0]].ID)
 	return shown[sel[0]]
+}
+
+// statusFilters are the choices of the list's status filter.
+var statusFilters = []string{"全部", "已通過", "尚未通過（含未提交）"}
+
+// Marks of the list's status column.
+const (
+	solvedMark = "已通過" // some submission is AC
+	triedMark  = "未通過" // submitted, never AC
+)
+
+// solveStatus maps each submitted problem to solvedMark, or triedMark
+// with the best partial score if any.
+func solveStatus(subs []*submission) map[string]string {
+	st := map[string]string{}
+	best := map[string]float64{}
+	for _, s := range subs {
+		if s.Report.Verdict == judge.AC {
+			st[s.Problem] = solvedMark
+		} else if st[s.Problem] == "" {
+			st[s.Problem] = triedMark
+		}
+		best[s.Problem] = max(best[s.Problem], s.Report.Score)
+	}
+	for p, v := range st {
+		if v == triedMark && best[p] > 0 {
+			st[p] = fmt.Sprintf("%s（最高 %g 分）", triedMark, best[p])
+		}
+	}
+	return st
 }
 
 // problemNumber returns the leading digits of id ("0001-a-plus-b" → "0001"), or id if none.
@@ -469,6 +508,9 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	if pr.Interactor != "" {
 		tgcomp.Caption(p.Main, "互動題：程式與題目的互動程式一問一答")
 	}
+	if c := compareCaption(pr.Compare); c != "" {
+		tgcomp.Caption(p.Main, c)
+	}
 
 	inLabel, outLabel := "輸入", "輸出"
 	if pr.Interactor != "" {
@@ -481,6 +523,10 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 		tgcomp.Code(in, c.Input, &tgcomp.CodeConf{Language: "text"})
 		tgcomp.Text(out, outLabel)
 		tgcomp.Code(out, c.Output, &tgcomp.CodeConf{Language: "text"})
+	}
+	if len(pr.Subtasks) > 0 {
+		tgcomp.Subtitle(p.Main, "子任務")
+		tgcomp.Markdown(p.Main, subtaskTable(pr.Subtasks))
 	}
 
 	if pr.Hint != "" {
@@ -526,7 +572,8 @@ func submitPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 		return
 	}
 	if tgcomp.Button(c, "提交", &tgcomp.ButtonConf{ID: "submit_" + key}) {
-		spec := judge.Spec{Limit: pr.TimeLimitFor(lg.id), Interactor: pr.Interactor}
+		spec := judge.Spec{Limit: pr.TimeLimitFor(lg.id), Interactor: pr.Interactor,
+			Compare: pr.Compare, Subtasks: pr.JudgeSubtasks()}
 		if pr.Checker != "" {
 			spec.Check = checkRunner().Checker(pr.Checker)
 		}
@@ -581,7 +628,7 @@ func historyPanel(c *tgframe.Container, pr *problems.Problem) {
 	for _, s := range subs {
 		lg := langByID(s.Lang)
 		title := fmt.Sprintf("#%d  %s  %s  %s", s.ID, s.At.Format("2006-01-02 15:04:05"),
-			lg.name, s.Report.Verdict)
+			lg.name, resultText(&s.Report))
 		if s.Report.Verdict != judge.CE {
 			title += "  " + fmtTime(maxTime(&s.Report))
 		}
@@ -630,14 +677,29 @@ func maxTime(rep *judge.Report) time.Duration {
 
 // showReport draws rep; id keeps its components unique on the page.
 func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report, id string) {
-	if rep.Verdict == judge.AC {
-		tgcomp.MessageSuccess(c, "AC：全部通過")
-	} else {
-		tgcomp.MessageDanger(c, string(rep.Verdict)+"："+verdictName(rep.Verdict))
+	score := ""
+	if rep.MaxScore > 0 {
+		score = "（" + scoreText(rep) + "）"
+	}
+	switch {
+	case rep.Verdict == judge.AC:
+		tgcomp.MessageSuccess(c, "AC：全部通過"+score)
+	case rep.Score > 0:
+		tgcomp.MessageWarning(c, string(rep.Verdict)+"："+verdictName(rep.Verdict)+score)
+	default:
+		tgcomp.MessageDanger(c, string(rep.Verdict)+"："+verdictName(rep.Verdict)+score)
 	}
 	if rep.Verdict == judge.CE {
 		tgcomp.Code(c, cut(rep.CompileError), &tgcomp.CodeConf{Language: "text"})
 		return
+	}
+
+	if len(rep.Subtasks) > 0 {
+		rows := make([][]string, len(rep.Subtasks))
+		for i, st := range rep.Subtasks {
+			rows[i] = []string{fmt.Sprint(i + 1), string(st.Verdict), fmt.Sprintf("%g / %g", st.Score, st.Max)}
+		}
+		tgcomp.Table(c, []string{"子任務", "結果", "分數"}, rows)
 	}
 
 	rows := make([][]string, len(rep.Cases))
@@ -683,10 +745,13 @@ func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report, i
 			tgcomp.Code(box, cut(cr.Stdout), &tgcomp.CodeConf{Language: "text"})
 		}
 		if cr.Message != "" {
-			if interactive {
+			switch {
+			case interactive:
 				tgcomp.Text(box, "互動程式訊息")
-			} else {
+			case pr.Checker != "":
 				tgcomp.Text(box, "checker 訊息")
+			default:
+				tgcomp.Text(box, "比對結果")
 			}
 			tgcomp.Code(box, cr.Message, &tgcomp.CodeConf{Language: "text"})
 		}
@@ -749,6 +814,26 @@ func customPanel(p *tgframe.Params, c *tgframe.Container, run runner, lg *lang,
 		tgcomp.Text(c, "stderr")
 		tgcomp.Code(c, cut(res.Stderr), &tgcomp.CodeConf{Language: "text"})
 	}
+}
+
+// compareCaption explains a comparison other than the default, or returns "".
+func compareCaption(cm judge.Compare) string {
+	switch cm.Mode {
+	case judge.CompareStrict:
+		return "輸出要逐字元相同，包含空白與換行"
+	case judge.CompareWhite:
+		return "以空白分隔逐項比對，空白的數量不影響判定，但換行要相同"
+	case judge.CompareFloat:
+		err := "絕對或相對誤差"
+		switch {
+		case !cm.Rel:
+			err = "絕對誤差"
+		case !cm.Abs:
+			err = "相對誤差"
+		}
+		return fmt.Sprintf("輸出的小數與答案的%s在 %g 以內即可，其他項要相同", err, cm.Eps)
+	}
+	return ""
 }
 
 // stdoutLabel names a run's Stdout, which is a transcript for an interactive problem.
@@ -907,6 +992,31 @@ func verdictName(v judge.Verdict) string {
 		return "編譯錯誤"
 	}
 	return ""
+}
+
+// scoreText is rep's score, e.g. "40 / 100 分".
+func scoreText(rep *judge.Report) string {
+	return fmt.Sprintf("%g / %g 分", rep.Score, rep.MaxScore)
+}
+
+// resultText is rep's verdict, with the score if the problem has subtasks.
+func resultText(rep *judge.Report) string {
+	if rep.MaxScore == 0 {
+		return string(rep.Verdict)
+	}
+	return string(rep.Verdict) + "（" + scoreText(rep) + "）"
+}
+
+// subtaskTable is a markdown table of subs, so constraints can hold LaTeX.
+func subtaskTable(subs []problems.Subtask) string {
+	cell := strings.NewReplacer("|", "\\|", "\n", " ")
+	var b strings.Builder
+	b.WriteString("| 子任務 | 分數 | 測資 | 限制 |\n| --- | --- | --- | --- |\n")
+	for i, st := range subs {
+		fmt.Fprintf(&b, "| %d | %g | %s | %s |\n", i+1, st.Score,
+			strings.Join(st.Cases, "、"), cell.Replace(st.Constraints))
+	}
+	return b.String()
 }
 
 func fmtTime(d time.Duration) string {

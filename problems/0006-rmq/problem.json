@@ -5,11 +5,29 @@
     "cpp": 500,
     "js": 1000
   },
-  "version": "2026-10-08 23:45:00",
+  "version": "2026-10-09 01:45:00",
   "tags": [
     "資料結構"
   ],
   "solution_tags": [
     "線段樹"
+  ],
+  "subtasks": [
+    {
+      "score": 40,
+      "tests": [
+        "01",
+        "02",
+        "03"
+      ],
+      "constraints": "$N, Q \\le 1000$"
+    },
+    {
+      "score": 60,
+      "tests": [
+        "0*"
+      ],
+      "constraints": "無額外限制"
+    }
   ]
 }

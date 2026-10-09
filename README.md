@@ -12,7 +12,7 @@
 - 執行 Go：Go 本身的 `cmd/compile`、`cmd/link` 編成 WASI wasm，在瀏覽器裡把程式編成 `GOOS=wasip1` 的 wasm，
   再跟 C++ 一樣執行（見下方「Go 的限制」）
 - 測資不保密，題目從 GitHub 下載（見下方「題目來源」）
-- 頁面：首頁、題目列表（`#/problems`，側欄可搜尋編號或題目、依標籤篩選，點表格裡的題目進入，「返回題目列表」回到列表）、
+- 頁面：首頁、題目列表（`#/problems`，側欄可搜尋編號或題目、依標籤與狀態篩選，「狀態」欄標示有 AC 的「已通過」與提交過但沒 AC 的「未通過」，點表格裡的題目進入，「返回題目列表」回到列表）、
   提交紀錄（`#/submissions`，所有題目的提交，點一筆看程式碼與結果）、設定（`#/settings`）
 - 程式碼、自訂輸入、語言選擇與提交紀錄存在瀏覽器的 IndexedDB（`offline-judge`），重新整理後還在
 
@@ -25,7 +25,7 @@ page ── toolgui worker (Go wasm：UI / 題目 / 比對)
             ├── gocompile.mjs  (Go compile + link：收 code，回 WebAssembly.Module 或編譯錯誤；常駐)
             ├── wasirun.mjs    (C++、Go 共用：收 module + stdin，回 stdout / stderr / 耗時)
             ├── jsrun.mjs      (收 code + stdin，回 stdout / stderr / 耗時；每次執行換新的 worker)
-            └── checker.mjs    (跑題目的 checker.js，回 AC / WA 與訊息)
+            └── checker.mjs    (轉送給 data: URL worker 裡的 checkbox.mjs，跑題目的 checker.js，回 AC / WA 與訊息)
 
 sandbox.mjs：跑題目附的 JS（checker.js、interactor.js）用，先拿掉儲存與網路 API
 ```
@@ -50,12 +50,14 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 
 | 結果 | 條件 |
 | --- | --- |
-| AC | 輸出相符（忽略行尾空白與結尾空行）；有 checker 的題目則由 checker 判定，互動題由互動程式判定 |
-| WA | 輸出不符，或 checker / 互動程式不接受（互動題先於 RE：被互動程式切斷的程式常常接著出錯） |
+| AC | 輸出相符（預設忽略行尾空白與結尾空行，可用 `compare` 改變）；有 checker 的題目則由 checker 判定，互動題由互動程式判定 |
+| WA | 輸出不符（會指出第一個不同的位置），或 checker / 互動程式不接受（互動題先於 RE：被互動程式切斷的程式常常接著出錯） |
 | CE | 編譯錯誤（C++、Go），不執行任何測資 |
 | RE | 例外、非零 `SystemExit` 或非零 exit code（含 `process.exit`） |
 | TLE | 耗時超過限制；超過限制 +1 秒仍未結束就砍掉 worker |
-| SKIP | 第一筆 TLE 之後的測資不再執行（每次 TLE 都要重載 Pyodide） |
+| SKIP | 第一筆 TLE 之後的測資不再執行（每次 TLE 都要重載 Pyodide）；有子任務時改為跳過所屬子任務都已失敗的測資 |
+
+有子任務的題目另外計分：子任務的測資全部 AC 才拿到該子任務的分數，總分為各子任務分數相加。
 
 尚未支援 MLE。
 
@@ -133,7 +135,7 @@ problems/0004-xxx/
   tests/
     sample1.in / sample1.out   sample 開頭的會顯示在題目裡
     01.in / 01.out
-  checker.js      選填，答案不唯一時用（見下方）
+  checker.js      選填，答案不唯一時用（見下方）；浮點數誤差等只要設 problem.json 的 compare
   interactor.js   選填，互動題用（見下方）；與 checker.js 擇一
   _solutions/     選填，參考解，給 scripts/bench.mjs 定時限用（見下方）；互動題必須有 ac.py
 ```
@@ -154,6 +156,32 @@ go test ./problems -update   # 從每題的 problem.json 重新產生 problems.j
 `solution_tags` 選填，放會暗示解法的標籤（例如「線段樹」、「二分搜尋」），不要跟 `tags` 重複。
 預設只在題目頁收合顯示；「設定」勾選「顯示解法標籤」後，才會跟 `tags` 一起顯示在列表與題目頁，也能用來篩選。
 這個 repo 的題目 `tags` 與 `solution_tags` 至少要有一個（`go test` 會檢查）。
+
+`subtasks` 選填，把測資分組計分（參考 TIOJ；範例：`problems/0006-rmq`）：
+
+```json
+"subtasks": [
+  {"score": 40, "tests": ["01", "02", "03"], "constraints": "$N, Q \\le 1000$"},
+  {"score": 60, "tests": ["0*"]}
+]
+```
+
+- `tests` 是測資名稱或 [`path.Match`](https://pkg.go.dev/path#Match) 的樣式（例如 `1-*`），每個都要符合至少一筆測資；
+  同一筆測資可以屬於多個子任務
+- 除了 sample 以外，每筆測資都要屬於某個子任務；sample 沒列進子任務時照常執行，但不影響分數
+- `constraints` 選填（Markdown），跟分數、測資一起列在題目頁的「子任務」表格
+- 題目列表的「狀態」會顯示沒通過的題目的最高分；這個 repo 的題目分數總和要是 100（`go test` 會檢查）
+
+`compare` 選填，內建的輸出比對方式（參考 TIOJ），不用寫 checker：
+
+| `compare` | 比對方式 |
+| --- | --- |
+| `line`（預設） | 逐行比對，忽略行尾空白與結尾空行 |
+| `strict` | 逐位元組比對 |
+| `white-diff` | 逐行比對，每行以空白分隔成項，空白的數量不影響；忽略結尾空行 |
+| `float-diff [absolute\|relative\|absolute-relative] [誤差]` | 同 `white-diff`，但答案中含 `.`、`e` 或 `E` 的數字允許誤差（預設 `absolute-relative 1e-6`，絕對或相對誤差其一在範圍內即可）；整數仍要相同 |
+
+WA 時會在「比對結果」指出第一個不同的行與項。有 `checker.js` 或 `interactor.js` 時不能設定 `compare`。
 
 `problems.json` 沒更新、或 `version` 格式不對的話 `go test` 會失敗。其他來源也要在資料夾根目錄放 `problems.json`：
 
@@ -192,8 +220,8 @@ export default function check(input, output, answer) {
 
 - 選手 TLE / RE 時不會呼叫 checker
 - 在獨立的 worker 執行，每次 5 秒上限；丟例外、逾時或回傳其他型別都算評測失敗
-- 執行前先拿掉 IndexedDB、fetch、Worker 等 API，盡量讓第三方來源的 checker 碰不到使用者的資料；
-  module 的 `import` 仍可連網，所以只能算盡力而為
+- 跑在 `data:` URL 的 worker 裡，origin 是不透明的，瀏覽器不讓它碰這個網站的 IndexedDB、Cache Storage 與 OPFS；
+  另外也拿掉 fetch、Worker 等 API。module 的 `import` 仍可連網，但 checker 只拿得到測資與選手輸出
 - `go test ./problems` 會用 Node 確認每題的 `.out` 都能通過自己的 checker
 
 ### 互動題
@@ -219,7 +247,7 @@ export default function interact(input) {
 - 互動過程以 `→`（程式輸出）、`←`（互動程式回答）記錄，失敗時顯示在測資下
 - Python 與 C++ 的輸出不 flush 也送得到（C++ 的 stdout 是 line buffered）；Go 直接寫 `os.Stdout` 也是，
   但用 `bufio.Writer`（範本預設）時要在讀之前 `Flush()`。JavaScript 尚未支援
-- 跟 checker 一樣先拿掉儲存與網路 API；丟例外算評測失敗
+- 跟 checker 一樣先拿掉儲存與網路 API，但跟選手程式在同一個 worker、與網站同 origin，只能算盡力而為；丟例外算評測失敗
 - `go test ./problems` 會用 Node 讓 `_solutions/ac.py` 跟互動程式對答，所有測資都要通過；
   這裡互動程式在程式輸出完整的一行後就被呼叫，參考解要 `flush=True`
 
