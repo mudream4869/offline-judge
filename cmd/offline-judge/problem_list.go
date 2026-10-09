@@ -4,6 +4,8 @@ package main
 
 import (
 	"fmt"
+	"maps"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -27,23 +29,13 @@ func Problems(p *tgframe.Params) error {
 		return nil
 	}
 
-	// A linked problem is picked once, so "back" still reaches the list.
-	if id := p.Query.Get("id"); id != "" {
-		if seen, _ := p.State.Get[string](linkedKey); seen != id {
-			p.State.Set(linkedKey, id)
-			p.State.Set(pickedKey, id)
-		}
-	}
-	// Before the list, so the cleared pick takes effect this run.
-	if tgcomp.ButtonClicked(p.Main, backLabel, backConf) {
-		p.State.Delete(pickedKey)
-	}
-	e := problemList(p, es)
+	e := pickedEntry(p, es)
 	if e == nil {
+		problemList(p, es)
 		return nil
 	}
 
-	tgcomp.Button(p.Main, backLabel, backConf)
+	tgcomp.PageLink(p.Main, "← 返回題目列表", "problems", listQuery(p.Query))
 	done := func() {}
 	if !e.Cached {
 		done = tgcomp.Spinner(p.Main, "下載題目中…")
@@ -57,104 +49,125 @@ func Problems(p *tgframe.Params) error {
 	return showProblem(p, pr)
 }
 
-const (
-	pickedKey = "picked_problem"
-	linkedKey = "linked_problem"
-	backLabel = "← 返回題目列表"
-)
-
-var backConf = &tgcomp.ButtonConf{ID: "problem_back"}
-
-// problemList returns the picked entry, or draws the list if there is none.
-func problemList(p *tgframe.Params, es []source.Entry) *source.Entry {
-	// A pick gone from a newer list falls back to the list.
-	if id, ok := p.State.Get[string](pickedKey); ok {
-		for i := range es {
-			if es[i].ID == id {
-				return &es[i]
-			}
-		}
-	}
-
-	// Filters sit in the sidebar; both slots clear once a problem is picked.
-	side := tgcomp.Empty(p.Sidebar)
-	showSol := showSolutionTags()
-	var query string
-	var want []string
-	filter := 0
-	side.With(func(c *tgframe.Container) {
-		query = strings.ToLower(strings.TrimSpace(tgcomp.Textbox(c, "搜尋", &tgcomp.TextboxConf{
-			Base:        tgframe.Base{ID: "problem_search"},
-			Placeholder: "編號或題目",
-		})))
-		if tags := allTags(es, showSol); len(tags) > 0 {
-			for _, i := range tgcomp.MultiSelect(c, "標籤", tags, &tgcomp.MultiSelectConf{
-				Base:        tgframe.Base{ID: "problem_tags"},
-				Placeholder: "全部",
-			}) {
-				want = append(want, tags[i])
-			}
-		}
-		if i := tgcomp.Select(c, "狀態", statusFilters, (&tgcomp.SelectConf{
-			Base: tgframe.Base{ID: "problem_status"},
-		}).SetDefault(0)); i != nil {
-			filter = *i
-		}
-	})
-	status := solveStatus(memo.allSubmissions())
-
-	slot := tgcomp.Empty(p.Main)
-	var shown []*source.Entry
-	var sel []int
-	slot.With(func(c *tgframe.Container) {
-		tgcomp.Title(c, "題目列表")
-		tgcomp.Caption(c, "點一題開始作答")
-
-		var ids []string
-		var rows [][]string
-		for i := range es {
-			e := &es[i]
-			num := problemNumber(e.ID)
-			tags := entryTags(e, showSol)
-			st := status[e.ID]
-			if !hasTags(tags, want) ||
-				!strings.Contains(strings.ToLower(num+" "+e.Title), query) ||
-				filter == 1 && st != solvedMark || filter == 2 && st == solvedMark {
-				continue
-			}
-			off := ""
-			if e.Cached {
-				off = "✓"
-			}
-			shown = append(shown, e)
-			ids = append(ids, e.ID)
-			rows = append(rows, []string{st, num, e.Title, strings.Join(tags, "、"),
-				fmtLimits(e.TimeLimit, e.TimeLimits), e.Version, off})
-		}
-		if len(rows) == 0 {
-			tgcomp.MessageInfo(c, "沒有符合的題目")
-			return
-		}
-		sel = tgcomp.DataFrame(c, []string{"狀態", "編號", "題目", "標籤", "時間限制", "版本", "可離線"}, rows,
-			(&tgcomp.DataFrameConf{
-				Base:      tgframe.Base{ID: "problem_list"},
-				PageSize:  100,
-				Selection: tgcomp.SelectionModeSingle,
-				RowKeys:   ids,
-			}).SetSortable(false).SetSearchable(false))
-	})
-	if len(sel) == 0 {
+// pickedEntry returns the entry the query's id names; if it's gone from a
+// newer list, it says so and returns nil.
+func pickedEntry(p *tgframe.Params, es []source.Entry) *source.Entry {
+	id := p.Query.Get("id")
+	if id == "" {
 		return nil
 	}
-	// Clearing drops the list's pick too, so it comes back unpicked.
-	slot.Clear()
-	side.Clear()
-	p.State.Set(pickedKey, shown[sel[0]].ID)
-	return shown[sel[0]]
+	for i := range es {
+		if es[i].ID == id {
+			return &es[i]
+		}
+	}
+	tgcomp.MessageWarning(p.Main, "找不到題目："+id)
+	return nil
+}
+
+// listQuery is q without the picked id, so a list keeps its filters.
+func listQuery(q url.Values) url.Values {
+	q = maps.Clone(q)
+	q.Del("id")
+	return q
+}
+
+// pickQuery is the list's query q with id picked.
+func pickQuery(q url.Values, id string) url.Values {
+	q = maps.Clone(q)
+	if q == nil {
+		q = url.Values{}
+	}
+	q.Set("id", id)
+	return q
+}
+
+// problemList draws the list; picking a row opens it. The filters are kept
+// in the query, so Back and the back link restore them.
+func problemList(p *tgframe.Params, es []source.Entry) {
+	showSol := showSolutionTags()
+	q := url.Values{}
+	search := tgcomp.Textbox(p.Sidebar, "搜尋", &tgcomp.TextboxConf{
+		Base:        tgframe.Base{ID: "problem_search"},
+		Placeholder: "編號或題目",
+		Default:     p.Query.Get("q"),
+	})
+	if search != "" {
+		q.Set("q", search)
+	}
+	query := strings.ToLower(strings.TrimSpace(search))
+	var want []string
+	if tags := allTags(es, showSol); len(tags) > 0 {
+		var def []int
+		for _, t := range p.Query["tag"] {
+			if i := slices.Index(tags, t); i >= 0 {
+				def = append(def, i)
+			}
+		}
+		for _, i := range tgcomp.MultiSelect(p.Sidebar, "標籤", tags, &tgcomp.MultiSelectConf{
+			Base:        tgframe.Base{ID: "problem_tags"},
+			Placeholder: "全部",
+			Default:     def,
+		}) {
+			want = append(want, tags[i])
+		}
+		q["tag"] = want
+	}
+	filter := max(slices.Index(statusKeys, p.Query.Get("status")), 0)
+	if i := tgcomp.Select(p.Sidebar, "狀態", statusFilters, (&tgcomp.SelectConf{
+		Base: tgframe.Base{ID: "problem_status"},
+	}).SetDefault(filter)); i != nil {
+		filter = *i
+	}
+	if filter > 0 {
+		q.Set("status", statusKeys[filter])
+	}
+	p.ReplaceQuery(q)
+	status := solveStatus(memo.allSubmissions())
+
+	tgcomp.Title(p.Main, "題目列表")
+	tgcomp.Caption(p.Main, "點一題開始作答")
+	var ids []string
+	var rows [][]string
+	for i := range es {
+		e := &es[i]
+		num := problemNumber(e.ID)
+		tags := entryTags(e, showSol)
+		st := status[e.ID]
+		if !hasTags(tags, want) ||
+			!strings.Contains(strings.ToLower(num+" "+e.Title), query) ||
+			filter == 1 && st != solvedMark || filter == 2 && st == solvedMark {
+			continue
+		}
+		off := ""
+		if e.Cached {
+			off = "✓"
+		}
+		ids = append(ids, e.ID)
+		rows = append(rows, []string{st, num, e.Title, strings.Join(tags, "、"),
+			fmtLimits(e.TimeLimit, e.TimeLimits), e.Version, off})
+	}
+	if len(rows) == 0 {
+		tgcomp.MessageInfo(p.Main, "沒有符合的題目")
+		return
+	}
+	sel := tgcomp.DataFrame(p.Main, []string{"狀態", "編號", "題目", "標籤", "時間限制", "版本", "可離線"}, rows,
+		(&tgcomp.DataFrameConf{
+			Base:      tgframe.Base{ID: "problem_list"},
+			PageSize:  100,
+			Selection: tgcomp.SelectionModeSingle,
+			RowKeys:   ids,
+		}).SetSortable(false).SetSearchable(false))
+	if len(sel) == 1 {
+		p.Navigate("problems", pickQuery(q, ids[sel[0]]))
+	}
 }
 
 // statusFilters are the choices of the list's status filter.
 var statusFilters = []string{"全部", "已通過", "尚未通過（含未提交）"}
+
+// statusKeys name statusFilters in the query.
+var statusKeys = []string{"", "solved", "unsolved"}
 
 // Marks of the list's status column.
 const (

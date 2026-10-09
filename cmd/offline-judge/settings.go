@@ -125,7 +125,7 @@ func openSet(c *tgframe.Container, ctx context.Context) *source.Set {
 		s, err := source.New(url, ghClient, probsStore)
 		if err != nil {
 			tgcomp.MessageDanger(c, "題目來源有誤："+err.Error())
-			tgcomp.Link(c, "前往設定", "#/settings")
+			tgcomp.PageLink(c, "前往設定", "settings", nil)
 			return nil
 		}
 		curSet = s

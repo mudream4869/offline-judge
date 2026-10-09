@@ -24,7 +24,7 @@ const about = `**Offline Judge**：完全在瀏覽器裡執行的解題系統，
 func Index(p *tgframe.Params) error {
 	tgcomp.Image(p.Main, "assets/banner.webp", &tgcomp.ImageConf{Width: "100%"})
 	tgcomp.Markdown(p.Main, intro)
-	tgcomp.Link(p.Main, "前往題目列表", "#/problems")
+	tgcomp.PageLink(p.Main, "前往題目列表", "problems", nil)
 	return nil
 }
 
