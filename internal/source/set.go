@@ -291,6 +291,10 @@ const fetchWorkers = 6
 func (s *Set) fetch(ctx context.Context, commit string, files []File,
 	progress func(done, total int)) error {
 
+	if err := context.Cause(ctx); err != nil {
+		return err
+	}
+
 	var todo []File
 	s.mu.Lock()
 	seen := map[string]bool{}
@@ -302,48 +306,55 @@ func (s *Set) fetch(ctx context.Context, commit string, files []File,
 	}
 	s.mu.Unlock()
 	if len(todo) == 0 {
-		return nil
+		return context.Cause(ctx)
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 	jobs := make(chan File)
-	errs := make(chan error, len(todo))
+	completed := make(chan struct{}, fetchWorkers)
 	var wg sync.WaitGroup
 	for range min(fetchWorkers, len(todo)) {
 		wg.Go(func() {
 			for f := range jobs {
-				errs <- s.fetchOne(ctx, commit, f)
+				if ctx.Err() != nil {
+					return
+				}
+				if err := s.fetchOne(ctx, commit, f); err != nil {
+					cancel(err)
+				}
+				completed <- struct{}{}
 			}
 		})
 	}
-	go func() {
+	wg.Go(func() {
 		defer close(jobs)
 		for _, f := range todo {
+			if ctx.Err() != nil {
+				return
+			}
 			select {
 			case jobs <- f:
 			case <-ctx.Done():
 				return
 			}
 		}
+	})
+	go func() {
+		wg.Wait()
+		close(completed)
 	}()
 
-	var first error
-	for done := range len(todo) {
-		err := <-errs
-		if err != nil && first == nil {
-			first = err
-			cancel()
-		}
-		if first == nil && progress != nil {
-			progress(done+1, len(todo))
-		}
-		if first != nil {
-			break
+	// Drain until both dispatch and downloads finish, including on cancel.
+	// A canceled batch may have dispatched fewer jobs than len(todo).
+	done := 0
+	for range completed {
+		done++
+		if progress != nil && ctx.Err() == nil {
+			progress(done, len(todo))
 		}
 	}
-	wg.Wait()
-	return first
+	return context.Cause(ctx)
 }
 
 func (s *Set) fetchOne(ctx context.Context, commit string, f File) error {
