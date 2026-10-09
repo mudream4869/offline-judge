@@ -202,6 +202,15 @@ node scripts/bench.mjs [題目...] [--runs N] [--cap 毫秒]
 ```
 
 用 headless Chromium（Playwright）跑網站本身的 worker，列出每個解法最慢的測資耗時與時限的倍數。
+啟動時會用 Go 編譯 `cmd/benchjudge` 到暫存目錄，每次執行的結果交給正式評測的 `judge.Judge` 判定，
+共用 `compare` 模式與互動題的判定順序。checker 也使用網站的 worker，有 5 秒上限，
+例外、逾時或無效回傳值會讓 benchmark 失敗。`--runs` 的每次執行都會判定，任何一次 WA / RE 都會讓 benchmark 失敗。
+校準時允許程式執行到 `--cap`，量到的耗時再與題目時限比較，不會在題目時限到達時就中止。
+
+```sh
+node --test scripts/benchjudge.test.mjs    # 不需要 dist/ 或瀏覽器，驗證 benchmark 的判定規則
+```
+
 ac 超時或 tle 通過時，結束碼為 1；差距不到 2 倍時會提醒。時限建議至少是 ac 的 2 倍，
 並且要明顯低於 tle（評測跑在使用者的機器上，可能比較慢）；兩者湊不出來時，應該加大測資，不要硬調時限。
 `--cap` 是砍掉程式前的等待時間（預設 10000）；`--runs` 每筆測資跑多次，ac 取最慢、tle 取最快。
