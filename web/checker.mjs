@@ -1,25 +1,20 @@
-// Runs a problem's checker.js. The Go side kills the worker when a check
-// takes too long.
+// Starts checkbox.mjs in a data: URL worker and relays messages to it. A
+// data: worker has an opaque origin, so the checker can't reach this site's
+// IndexedDB, Cache Storage or OPFS whatever lockdown misses. The Go side
+// kills this worker when a check takes too long, and the inner one with it.
 //
-// checker.js: export default function check(input, output, answer)
-//   returns true (AC), false or a message string (WA)
-//
-// in:  {id, checker, input, output, answer}
-// out: {type: "ready"}
-//      {type: "result", id, ok, message, error}
+// Requests from a data: worker skip the service worker, so the sources are
+// fetched here (offline too) and inlined instead of imported.
 
-import { lockdown, importDefault, verdict } from './sandbox.mjs'
+const src = async name => (await fetch(new URL(name, import.meta.url))).text()
 
-lockdown()
-
-self.onmessage = async ({ data: { id, checker, input, output, answer } }) => {
-  try {
-    const check = await importDefault(checker, 'checker.js')
-    const { ok, message } = verdict(await check(input, output, answer), 'checker')
-    self.postMessage({ type: 'result', id, ok, message })
-  } catch (e) {
-    self.postMessage({ type: 'result', id, ok: false, message: '', error: String(e?.stack || e) })
-  }
+try {
+  const box = (await src('sandbox.mjs')).replace(/^export /gm, '') +
+    (await src('checkbox.mjs')).replace(/^import .*$/m, '')
+  const inner = new Worker('data:text/javascript,' + encodeURIComponent(box), { type: 'module' })
+  inner.onmessage = ({ data }) => self.postMessage(data)
+  inner.onerror = e => self.postMessage({ type: 'error', error: `checker 環境載入失敗：${e.message}` })
+  self.onmessage = ({ data }) => inner.postMessage(data)
+} catch (e) {
+  self.postMessage({ type: 'error', error: String(e) })
 }
-
-self.postMessage({ type: 'ready' })
