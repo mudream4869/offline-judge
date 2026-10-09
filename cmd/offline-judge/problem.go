@@ -11,6 +11,7 @@ import (
 	"github.com/voilelab/toolgui/toolgui/tgframe"
 
 	"github.com/mudream4869/offline-judge/internal/judge"
+	"github.com/mudream4869/offline-judge/internal/source"
 	"github.com/mudream4869/offline-judge/problems"
 )
 
@@ -81,6 +82,9 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	if !showSol && len(pr.SolutionTags) > 0 {
 		h := tgcomp.Expand(p.Main, "解法標籤（點開會暴雷）", false, &tgcomp.ExpandConf{ID: "soltags_" + pr.ID})
 		tgcomp.Text(h, strings.Join(pr.SolutionTags, "、"))
+	}
+	if u := reportURL(pr); u != "" {
+		tgcomp.Link(p.Main, "回報題目問題（GitHub issue）", u)
 	}
 
 	tgcomp.Divider(p.Main)
@@ -283,4 +287,23 @@ func subtaskTable(subs []problems.Subtask) string {
 			strings.Join(st.Cases, "、"), cell.Replace(st.Constraints))
 	}
 	return b.String()
+}
+
+// reportURL links to a new issue about pr on the source's repository,
+// prefilled with what identifies the problem; "" if the source isn't valid.
+func reportURL(pr *problems.Problem) string {
+	src := sourceURL()
+	r, err := source.Parse(src)
+	if err != nil {
+		return ""
+	}
+	at := ""
+	setMu.Lock()
+	if curSet != nil && curSet.URL == src && curSet.Commit() != "" {
+		at = "（commit " + curSet.Commit()[:7] + "）"
+	}
+	setMu.Unlock()
+	body := fmt.Sprintf("題目：%s（%s）\n版本：%s\n來源：%s%s\n\n## 問題描述\n\n",
+		pr.Title, pr.ID, pr.Version, src, at)
+	return source.IssueURL(r, "題目 "+problemNumber(pr.ID)+" "+pr.Title+"：", body)
 }
