@@ -147,6 +147,8 @@ func verdictName(v judge.Verdict) string {
 		return "執行錯誤"
 	case judge.CE:
 		return "編譯錯誤"
+	case judge.OLE:
+		return fmt.Sprintf("輸出超過 %d MB", outputLimit>>20)
 	}
 	return ""
 }

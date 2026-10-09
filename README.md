@@ -33,9 +33,9 @@ sandbox.mjs：跑題目附的 JS（checker.js、interactor.js）用，先拿掉�
 執行用的 worker 介面為：
 
 ```
-in:  {id, code, stdin, interactor?}   （wasirun.mjs 是 {id, module, stdin, interactor?}）
+in:  {id, code, stdin, interactor?, outputLimit?}   （wasirun.mjs 是 {id, module, stdin, interactor?, outputLimit?}）
 out: {type: "ready"} | {type: "error", error}
-     {type: "result", id, status: "ok"|"re", stdout, stderr, ms, fatal, judged?, iaError?}
+     {type: "result", id, status: "ok"|"re"|"ole", stdout, stderr, ms, fatal, judged?, iaError?}
 ```
 
 有 `interactor`（互動題）時 `stdin` 是互動程式的輸入，`stdout` 是互動過程，
@@ -55,6 +55,7 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 | CE | 編譯錯誤（C++、Go），不執行任何測資 |
 | RE | 例外、非零 `SystemExit` 或非零 exit code（含 `process.exit`） |
 | TLE | 耗時超過限制；超過限制 +1 秒仍未結束就砍掉 worker |
+| OLE | stdout 加 stderr 超過 16 MB（JavaScript 以字元數計），立即停止程式；不影響後面的測資 |
 | SKIP | 第一筆 TLE 之後的測資不再執行（每次 TLE 都要重載 Pyodide）；有子任務時改為跳過所屬子任務都已失敗的測資 |
 
 有子任務的題目另外計分：子任務的測資全部 AC 才拿到該子任務的分數，總分為各子任務分數相加。
