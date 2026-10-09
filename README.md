@@ -97,9 +97,14 @@ TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
 
 ### Kattis 題目包
 
-來源資料夾沒有 `problems.json`、但子資料夾有 `problem.yaml` 時，每個這樣的子資料夾視為一個
-[Kattis 題目包](https://www.kattis.com/problem-package-format/)，資料夾名稱就是題目 id，
-例如 `https://github.com/Kattis/problemtools/tree/master/examples`。legacy 與 2023-07 之後的格式都可以：
+來源資料夾沒有 `problems.json` 時，會當成 [Kattis 題目包](https://www.kattis.com/problem-package-format/)讀取：
+
+- 資料夾本身有 `problem.yaml`：這個來源就是一題，id 是資料夾名稱（repo 根目錄則是 repo 名稱），
+  例如 `https://github.com/Kattis/problemtools/tree/master/examples/hello`
+- 子資料夾有 `problem.yaml`：每個子資料夾一題，資料夾名稱就是題目 id，
+  例如 `https://github.com/Kattis/problemtools/tree/master/examples`
+
+legacy 與 2023-07 之後的格式都可以：
 
 | Kattis | 對應 |
 | --- | --- |

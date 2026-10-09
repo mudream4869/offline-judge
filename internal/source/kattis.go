@@ -13,9 +13,27 @@ import (
 )
 
 // kattis is a directory of Kattis problem packages, <id>/problem.yaml,
-// as contests publish them; there is no list file, so every problem.yaml
-// comes with the list.
-type kattis struct{}
+// as contests publish them, or one package at the root; there is no list
+// file, so every problem.yaml comes with the list.
+type kattis struct {
+	// root is the id of the package at the root; "" for a directory of packages.
+	root string
+}
+
+func (k kattis) ids(ix *Index) []string {
+	if k.root != "" {
+		return []string{k.root}
+	}
+	return kattisIDs(ix)
+}
+
+// prefix is the path of problem id's package, with a trailing slash.
+func (k kattis) prefix(id string) string {
+	if k.root != "" {
+		return ""
+	}
+	return id + "/"
+}
 
 // kattisIDs returns the packages in ix, sorted.
 func kattisIDs(ix *Index) []string {
@@ -30,10 +48,10 @@ func kattisIDs(ix *Index) []string {
 	return ids
 }
 
-func (kattis) listFiles(ix *Index) ([]File, error) {
+func (k kattis) listFiles(ix *Index) ([]File, error) {
 	var out []File
-	for _, id := range kattisIDs(ix) {
-		f, _ := ix.find(id + "/" + problems.KattisMetaFile)
+	for _, id := range k.ids(ix) {
+		f, _ := ix.find(k.prefix(id) + problems.KattisMetaFile)
 		out = append(out, f)
 	}
 	return out, nil
@@ -41,15 +59,15 @@ func (kattis) listFiles(ix *Index) ([]File, error) {
 
 func (k kattis) list(ix *Index, read func(File) ([]byte, error)) ([]problems.Entry, error) {
 	var out []problems.Entry
-	for _, id := range kattisIDs(ix) {
-		f, _ := ix.find(id + "/" + problems.KattisMetaFile)
+	for _, id := range k.ids(ix) {
+		f, _ := ix.find(k.prefix(id) + problems.KattisMetaFile)
 		bs, err := read(f)
 		if err != nil {
 			return nil, err
 		}
 		var rel []string
 		for _, f := range ix.Files {
-			if r, ok := strings.CutPrefix(f.Path, id+"/"); ok {
+			if r, ok := strings.CutPrefix(f.Path, k.prefix(id)); ok {
 				rel = append(rel, r)
 			}
 		}
@@ -66,10 +84,10 @@ func (k kattis) list(ix *Index, read func(File) ([]byte, error)) ([]problems.Ent
 	return out, nil
 }
 
-func (kattis) files(ix *Index, id string) []File {
+func (k kattis) files(ix *Index, id string) []File {
 	var out []File
 	for _, f := range ix.Files {
-		rest, ok := strings.CutPrefix(f.Path, id+"/")
+		rest, ok := strings.CutPrefix(f.Path, k.prefix(id))
 		if !ok {
 			continue
 		}
@@ -88,8 +106,12 @@ func (kattis) files(ix *Index, id string) []File {
 	return out
 }
 
-func (kattis) load(fsys fs.FS, id string, m problems.Meta) (*problems.Problem, error) {
-	return problems.LoadKattis(fsys, id, m)
+func (k kattis) load(fsys fs.FS, id string, m problems.Meta) (*problems.Problem, error) {
+	dir := id
+	if k.root != "" {
+		dir = "."
+	}
+	return problems.LoadKattis(fsys, dir, id, m)
 }
 
 // kattisVersion names the content of files, so a change marks old

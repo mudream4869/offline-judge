@@ -28,7 +28,7 @@ func loadKattisFS(t *testing.T, files map[string]string) *Problem {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := LoadKattis(fsys, "p", m)
+	p, err := LoadKattis(fsys, "p", "p", m)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,6 +167,30 @@ func TestKattisStatementLanguage(t *testing.T) {
 	})
 	if p.Statement != "# Echo\n\nEnglish\n" {
 		t.Errorf("statement = %q", p.Statement)
+	}
+}
+
+// A package at the root of fsys, as a repo of one problem.
+func TestKattisRoot(t *testing.T) {
+	fsys := fstest.MapFS{
+		"problem.yaml":            {Data: []byte("name: Two Sum\n")},
+		"statement/problem.en.md": {Data: []byte("Add.\n")},
+		"data/sample/1.in":        {Data: []byte("1 2\n")},
+		"data/sample/1.ans":       {Data: []byte("3\n")},
+		"data/secret/g/1.in":      {Data: []byte("2 2\n")},
+		"data/secret/g/1.ans":     {Data: []byte("4\n")},
+	}
+	m, err := ParseKattisMeta(fsys["problem.yaml"].Data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := LoadKattis(fsys, ".", "two-sum", m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ID != "two-sum" || p.Title != "Two Sum" || len(p.Cases) != 2 ||
+		p.Cases[0].Name != "sample/1" || p.Cases[1].Name != "secret/g/1" {
+		t.Errorf("problem = %+v", p)
 	}
 }
 

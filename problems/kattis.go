@@ -97,17 +97,18 @@ func isKattisScoring(bs []byte) bool {
 	return slices.Contains(stringList(y.Type), "scoring")
 }
 
-// LoadKattis reads the Kattis package in directory id of fsys.
-func LoadKattis(fsys fs.FS, id string, m Meta) (*Problem, error) {
-	p, err := loadKattis(fsys, id, m)
+// LoadKattis reads the Kattis package in directory dir of fsys ("." for
+// the root) as problem id.
+func LoadKattis(fsys fs.FS, dir, id string, m Meta) (*Problem, error) {
+	p, err := loadKattis(fsys, dir, id, m)
 	if err != nil {
 		return nil, fmt.Errorf("problem %s: %w", id, err)
 	}
 	return p, nil
 }
 
-func loadKattis(fsys fs.FS, id string, m Meta) (*Problem, error) {
-	yml, err := fs.ReadFile(fsys, path.Join(id, KattisMetaFile))
+func loadKattis(fsys fs.FS, dir, id string, m Meta) (*Problem, error) {
+	yml, err := fs.ReadFile(fsys, path.Join(dir, KattisMetaFile))
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +116,7 @@ func loadKattis(fsys fs.FS, id string, m Meta) (*Problem, error) {
 	if title == "" {
 		title = id
 	}
-	stmt, err := kattisStatement(fsys, id)
+	stmt, err := kattisStatement(fsys, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -129,14 +130,14 @@ func loadKattis(fsys fs.FS, id string, m Meta) (*Problem, error) {
 		Compare:     m.Compare,
 		Unsupported: m.Unsupported,
 	}
-	p.Cases, err = kattisCases(fsys, id, m.Unsupported != "")
+	p.Cases, err = kattisCases(fsys, dir, m.Unsupported != "")
 	if err != nil {
 		return nil, err
 	}
 	if len(p.Cases) == 0 {
 		return nil, fmt.Errorf("data/ 裡沒有測資")
 	}
-	if flags := kattisValidatorFlags(fsys, id); flags != "" {
+	if flags := kattisValidatorFlags(fsys, dir); flags != "" {
 		cmp, err := judge.ParseCompare(m.Compare.String() + " " + flags)
 		if err != nil {
 			return nil, fmt.Errorf("output_validator 參數：%w", err)
@@ -146,7 +147,7 @@ func loadKattis(fsys fs.FS, id string, m Meta) (*Problem, error) {
 
 	var note string
 	if isKattisScoring(yml) {
-		p.Subtasks, note = kattisSubtasks(fsys, id, p.Cases)
+		p.Subtasks, note = kattisSubtasks(fsys, dir, p.Cases)
 	}
 	p.Statement = "# " + title + "\n\n" + stmt
 	if note != "" {
@@ -157,10 +158,10 @@ func loadKattis(fsys fs.FS, id string, m Meta) (*Problem, error) {
 
 // kattisStatement returns the statement as Markdown, preferring Markdown
 // over LaTeX and kattisLangs in order.
-func kattisStatement(fsys fs.FS, id string) (string, error) {
+func kattisStatement(fsys fs.FS, dir string) (string, error) {
 	var files []string
-	for _, dir := range []string{"statement", "problem_statement"} {
-		ms, _ := fs.Glob(fsys, path.Join(id, dir, "problem*"))
+	for _, sub := range []string{"statement", "problem_statement"} {
+		ms, _ := fs.Glob(fsys, path.Join(dir, sub, "problem*"))
 		files = append(files, ms...)
 	}
 	// By language, then Markdown before LaTeX.
@@ -198,10 +199,10 @@ func kattisStatement(fsys fs.FS, id string) (string, error) {
 // kattisCases reads data/sample and data/secret; names keep their path
 // under data/, so samples start with "sample". With optionalAns a missing
 // .ans is "" (interactive problems may have none).
-func kattisCases(fsys fs.FS, id string, optionalAns bool) ([]judge.Case, error) {
+func kattisCases(fsys fs.FS, dir string, optionalAns bool) ([]judge.Case, error) {
 	var cases []judge.Case
 	for _, group := range []string{"sample", "secret"} {
-		root := path.Join(id, "data", group)
+		root := path.Join(dir, "data", group)
 		var ins []string
 		err := fs.WalkDir(fsys, root, func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -217,7 +218,7 @@ func kattisCases(fsys fs.FS, id string, optionalAns bool) ([]judge.Case, error) 
 		}
 		sort.Strings(ins)
 		for _, in := range ins {
-			name := strings.TrimSuffix(strings.TrimPrefix(in, path.Join(id, "data")+"/"), ".in")
+			name := strings.TrimSuffix(strings.TrimPrefix(in, path.Join(dir, "data")+"/"), ".in")
 			inBs, err := fs.ReadFile(fsys, in)
 			if err != nil {
 				return nil, err
@@ -235,10 +236,10 @@ func kattisCases(fsys fs.FS, id string, optionalAns bool) ([]judge.Case, error) 
 // kattisValidatorFlags returns the default validator flags set for the
 // secret data: output_validator_flags (legacy testdata.yaml) or
 // output_validator_args (test_group.yaml), nearest first.
-func kattisValidatorFlags(fsys fs.FS, id string) string {
-	for _, dir := range []string{"data/secret", "data"} {
+func kattisValidatorFlags(fsys fs.FS, dir string) string {
+	for _, sub := range []string{"data/secret", "data"} {
 		for _, name := range []string{"test_group.yaml", "testdata.yaml"} {
-			bs, err := fs.ReadFile(fsys, path.Join(id, dir, name))
+			bs, err := fs.ReadFile(fsys, path.Join(dir, sub, name))
 			if err != nil {
 				continue
 			}
@@ -274,9 +275,9 @@ type kattisGroup struct {
 // kattisSubtasks turns the groups of data/secret into subtasks. A group
 // maps when it scores all or nothing; otherwise it returns no subtasks and
 // a note that the problem is judged pass-fail.
-func kattisSubtasks(fsys fs.FS, id string, cases []judge.Case) ([]Subtask, string) {
+func kattisSubtasks(fsys fs.FS, dir string, cases []judge.Case) ([]Subtask, string) {
 	const fallback = "原題依測資部分給分，這裡只判斷是否全部通過。"
-	entries, err := fs.ReadDir(fsys, path.Join(id, "data", "secret"))
+	entries, err := fs.ReadDir(fsys, path.Join(dir, "data", "secret"))
 	if err != nil {
 		return nil, fallback
 	}
@@ -297,7 +298,7 @@ func kattisSubtasks(fsys fs.FS, id string, cases []judge.Case) ([]Subtask, strin
 		if len(names) == 0 {
 			continue
 		}
-		g, ok := readKattisGroup(fsys, path.Join(id, "data", "secret", e.Name()))
+		g, ok := readKattisGroup(fsys, path.Join(dir, "data", "secret", e.Name()))
 		if !ok {
 			return nil, fallback
 		}

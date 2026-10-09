@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	neturl "net/url"
 	"path"
 	"sort"
 	"strings"
@@ -50,6 +51,7 @@ type Set struct {
 	URL     string
 	backend Backend
 	store   Store
+	rootID  string // the id when the source is one problem
 
 	mu      sync.Mutex
 	ix      *Index
@@ -66,12 +68,32 @@ func New(url string, c *Client, st Store) (*Set, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewFromBackend(url, GitHub{Repo: r, Client: c}, st), nil
+	s := NewFromBackend(url, GitHub{Repo: r, Client: c}, st)
+	// Not the ref: …/tree/main is the repo.
+	s.rootID = r.Name
+	if r.Dir != "" {
+		s.rootID = path.Base(r.Dir)
+	}
+	return s, nil
 }
 
 // NewFromBackend returns the Set of files from b; url keys it in st.
 func NewFromBackend(url string, b Backend, st Store) *Set {
-	return &Set{URL: url, backend: b, store: st}
+	return &Set{URL: url, backend: b, store: st, rootID: baseName(url)}
+}
+
+// baseName is the last path segment of a source URL, naming a source that
+// is one problem.
+func baseName(u string) string {
+	p := u
+	if pu, err := neturl.Parse(u); err == nil && pu.Path != "" {
+		p = pu.Path
+	}
+	name := strings.TrimSuffix(path.Base(strings.TrimRight(p, "/")), ".git")
+	if name == "" || name == "." || name == "/" {
+		return "problem"
+	}
+	return name
 }
 
 // Open loads the list from the store, or from the backend if it isn't stored.
@@ -118,7 +140,7 @@ func (s *Set) Refresh(ctx context.Context) error {
 		}
 		ix = &Index{Commit: commit, Files: files}
 		// Get what the list is built from before saving ix.
-		f, err := formatOf(ix)
+		f, err := formatOf(ix, s.rootID)
 		if err != nil {
 			return err
 		}
@@ -147,7 +169,7 @@ func (s *Set) setIndex(ix *Index) error {
 		s.ix = ix
 		return nil
 	}
-	f, err := formatOf(ix)
+	f, err := formatOf(ix, s.rootID)
 	if err != nil {
 		return err
 	}

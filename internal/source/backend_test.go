@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -13,6 +14,8 @@ type memBackend struct {
 	version string
 	files   map[string][]byte
 	links   map[string]bool // paths that are symbolic links
+
+	mu      sync.Mutex // Fetch runs in parallel
 	fetched []string
 }
 
@@ -27,6 +30,8 @@ func (m *memBackend) List(context.Context, string) ([]File, error) {
 }
 
 func (m *memBackend) Fetch(_ context.Context, _ string, f File) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.fetched = append(m.fetched, f.Path)
 	return m.files[f.Path], nil
 }
@@ -134,5 +139,52 @@ func TestKattisSource(t *testing.T) {
 	es2 := s.Entries()
 	if es2[1].Version == es[1].Version || es2[0].Version != es[0].Version {
 		t.Errorf("versions %s→%s, %s→%s", es[1].Version, es2[1].Version, es[0].Version, es2[0].Version)
+	}
+}
+
+// TestKattisRootSource reads a source that is one Kattis package.
+func TestKattisRootSource(t *testing.T) {
+	ctx := context.Background()
+	b := &memBackend{version: "v1", files: map[string][]byte{
+		"README.md":               []byte("one problem"),
+		"problem.yaml":            []byte("name: Two Sum\n"),
+		"statement/problem.en.md": []byte("Add.\n"),
+		"data/secret/1.in":        []byte("1 2\n"),
+		"data/secret/1.ans":       []byte("3\n"),
+		"submissions/ac/a.py":     []byte(""),
+	}}
+	s := NewFromBackend("https://example.com/someone/two-sum/", b, NewMemStore())
+	if _, err := s.Open(ctx); err != nil {
+		t.Fatal(err)
+	}
+	es := s.Entries()
+	if len(es) != 1 || es[0].ID != "two-sum" || es[0].Title != "Two Sum" {
+		t.Fatalf("entries = %+v", es)
+	}
+	p, err := s.Problem(ctx, "two-sum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Cases) != 1 || p.Cases[0].Output != "3\n" || p.Statement != "# Two Sum\n\nAdd.\n" {
+		t.Errorf("problem = %+v", p)
+	}
+}
+
+// A GitHub source that is one problem is named after its folder, or its repo.
+func TestRootID(t *testing.T) {
+	for url, want := range map[string]string{
+		"https://github.com/o/two-sum":                           "two-sum",
+		"https://github.com/o/two-sum.git":                       "two-sum",
+		"https://github.com/o/two-sum/tree/main":                 "two-sum",
+		"https://github.com/o/contest/tree/main/problems/hello":  "hello",
+		"https://github.com/o/contest/tree/main/problems/hello/": "hello",
+	} {
+		s, err := New(url, NewClient(), NewMemStore())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.rootID != want {
+			t.Errorf("rootID(%s) = %q, want %q", url, s.rootID, want)
+		}
 	}
 }
