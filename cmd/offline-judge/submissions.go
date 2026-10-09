@@ -75,11 +75,12 @@ func submissionList(p *tgframe.Params, subs []*submission) {
 
 	cur := currentEntries(p, p.Main)
 	var ids []string
-	var rows [][]string
+	var rows [][]tgcomp.Cell
 	for _, s := range subs {
-		t := "-"
+		t, tc := "-", tgcomp.MissingCell().WithDisplay("-")
 		if s.Report.Verdict != judge.CE {
-			t = fmtTime(maxTime(&s.Report))
+			mt := maxTime(&s.Report)
+			t, tc = fmtTime(mt), tgcomp.NumberCell(float64(mt.Milliseconds())).WithDisplay(fmtTime(mt))
 		}
 		title, ver := s.Problem, s.Version
 		if e, ok := cur[s.Problem]; ok {
@@ -94,19 +95,29 @@ func submissionList(p *tgframe.Params, subs []*submission) {
 			continue
 		}
 		ids = append(ids, strconv.Itoa(s.ID))
-		rows = append(rows, row)
+		rows = append(rows, []tgcomp.Cell{
+			tgcomp.NumberCell(float64(s.ID)).WithDisplay(row[0]),
+			tgcomp.TimeCell(s.At).WithDisplay(row[1]),
+			tgcomp.TextCell(row[2]), tgcomp.TextCell(row[3]), tgcomp.TextCell(row[4]),
+			tgcomp.TextCell(row[5]), tc,
+		})
 	}
 	if len(rows) == 0 {
 		tgcomp.Caption(p.Main, "沒有符合搜尋的提交紀錄")
 		return
 	}
-	sel := tgcomp.DataFrame(p.Main, []string{"編號", "時間", "題目", "版本", "語言", "結果", "最長耗時"}, rows,
+	cols := make([]tgcomp.DataFrameColumnConf, 7)
+	cols[0].Type = tgcomp.ColumnTypeNumber
+	cols[1].Type = tgcomp.ColumnTypeDatetime
+	cols[6].Type = tgcomp.ColumnTypeNumber
+	sel := tgcomp.DataFrameCells(p.Main, []string{"編號", "時間", "題目", "版本", "語言", "結果", "最長耗時"}, rows,
 		(&tgcomp.DataFrameConf{
-			Base:      tgframe.Base{ID: "submission_list"},
-			PageSize:  50,
-			Selection: tgcomp.SelectionModeSingle,
-			RowKeys:   ids,
-		}).SetSortable(false).SetSearchable(false))
+			Base:       tgframe.Base{ID: "submission_list"},
+			PageSize:   50,
+			ColumnConf: cols,
+			Selection:  tgcomp.SelectionModeSingle,
+			RowKeys:    ids,
+		}).SetSearchable(false))
 	if len(sel) == 1 {
 		p.Navigate("submissions", pickQuery(lq, ids[sel[0]]))
 	}
