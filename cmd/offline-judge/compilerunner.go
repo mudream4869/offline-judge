@@ -26,12 +26,20 @@ type CompileRunner struct {
 	mu  sync.Mutex
 	cc  *worker
 	seq int
-	// Last compile, reused by every case of a submission.
-	code   string
-	grader string
-	module js.Value // undefined on CE
-	ce     string
+	// Recent compiles, oldest first: every case of a submission reuses
+	// one, and a stress test takes turns between three.
+	cache []compiled
 }
+
+// compiled is a compile of code with grader.
+type compiled struct {
+	code, grader string
+	module       js.Value // undefined on CE
+	ce           string
+}
+
+// compileCache is how many compiles CompileRunner keeps.
+const compileCache = 4
 
 func NewCompileRunner(name, ccURL, runURL string) *CompileRunner {
 	return &CompileRunner{
@@ -56,11 +64,16 @@ func (r *CompileRunner) awaitLoad() {
 	cc.await()
 }
 
-func (r *CompileRunner) compile(ctx context.Context, code, grader string) error {
+// compile returns the compile of code with grader, from the cache if there.
+func (r *CompileRunner) compile(ctx context.Context, code, grader string) (compiled, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.code == code && r.grader == grader && (!r.module.IsUndefined() || r.ce != "") {
-		return nil
+	for i, c := range r.cache {
+		if c.code == code && c.grader == grader {
+			// Most recent last.
+			r.cache = append(append(r.cache[:i:i], r.cache[i+1:]...), c)
+			return c, nil
+		}
 	}
 
 	if err := r.cc.wait(ctx, r.name); err != nil {
@@ -68,7 +81,7 @@ func (r *CompileRunner) compile(ctx context.Context, code, grader string) error 
 			r.cc.kill()
 			r.cc = spawnWorker(r.ccURL)
 		}
-		return err
+		return compiled{}, err
 	}
 
 	msg := js.Global().Get("Object").New()
@@ -82,35 +95,35 @@ func (r *CompileRunner) compile(ctx context.Context, code, grader string) error 
 		// Probably stuck: restart the compiler.
 		r.cc.kill()
 		r.cc = spawnWorker(r.ccURL)
-		return errCompileTimeout
+		return compiled{}, errCompileTimeout
 	}
 	if err != nil {
-		return err
+		return compiled{}, err
 	}
 
-	r.code, r.grader = code, grader
-	r.module = js.Undefined()
-	r.ce = ""
+	c := compiled{code: code, grader: grader, module: js.Undefined()}
 	if data.Get("status").String() == "ok" {
-		r.module = data.Get("module")
+		c.module = data.Get("module")
 	} else {
-		r.ce = data.Get("stderr").String()
+		c.ce = data.Get("stderr").String()
 	}
-	return nil
+	if len(r.cache) == compileCache {
+		r.cache = r.cache[1:]
+	}
+	r.cache = append(r.cache, c)
+	return c, nil
 }
 
 func (r *CompileRunner) Run(ctx context.Context, code string, in judge.Input,
 	limit time.Duration) (judge.RunResult, error) {
 
-	if err := r.compile(ctx, code, in.Grader); err != nil {
+	c, err := r.compile(ctx, code, in.Grader)
+	if err != nil {
 		return judge.RunResult{}, err
 	}
-
-	r.mu.Lock()
-	module, ce := r.module, r.ce
-	r.mu.Unlock()
+	module := c.module
 	if module.IsUndefined() {
-		return judge.RunResult{Status: judge.RunCompileError, Stderr: ce}, nil
+		return judge.RunResult{Status: judge.RunCompileError, Stderr: c.ce}, nil
 	}
 
 	msg := js.Global().Get("Object").New()

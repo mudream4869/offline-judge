@@ -130,9 +130,10 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 		}
 	}
 
-	submitTab, customTab, histTab := tgcomp.Tab3(p.Main, "提交", "自訂輸入", "紀錄")
+	submitTab, customTab, stressTab, histTab := tgcomp.Tab4(p.Main, "提交", "自訂輸入", "對拍", "紀錄")
 	submitPanel(p, submitTab, lg, key, pr, code)
 	customPanel(p, customTab, run, lg, key, pr, code)
+	stressPanel(p, stressTab, lg, key, pr, code)
 	historyPanel(p.Context, histTab, pr)
 	return nil
 }
