@@ -33,6 +33,7 @@ func sourcesSection(p *tgframe.Params, c *tgframe.Container, cf *confirmDialog, 
 	for _, url := range urls {
 		if done == "rm:"+url {
 			setSourceURLs(slices.DeleteFunc(slices.Clone(urls), func(u string) bool { return u == url }))
+			toastDone(c, "已移除「"+sourceLabel(url)+"」")
 		}
 		if tgcomp.ButtonClicked(c, "移除", removeConf(url)) {
 			cf.ask("rm:"+url, "移除來源「"+sourceLabel(url)+"」？之後可以再加回來。", "移除")
@@ -46,6 +47,7 @@ func sourcesSection(p *tgframe.Params, c *tgframe.Container, cf *confirmDialog, 
 	resetConf := &tgcomp.ButtonConf{ID: "source_reset"}
 	if done == "src_reset" {
 		setSourceURLs([]string{defaultSource})
+		toastDone(c, "已還原預設來源")
 	}
 	if tgcomp.ButtonClicked(c, "還原預設", resetConf) {
 		cf.ask("src_reset", "還原成只有 Offline Judge 題庫？其他來源都會被移除。", "還原")
@@ -137,6 +139,7 @@ func templateSection(c *tgframe.Container, cf *confirmDialog, done string) {
 	reset := done == "tmpl_reset:"+lg.id
 	if reset {
 		setUserTemplate(lg, lg.code)
+		toastDone(c, "已還原 "+lg.name+" 內建範本")
 	}
 	code := tgcomp.CodeInput(c, lg.name+" 預設程式碼", &tgcomp.CodeInputConf{
 		ID:        key,
@@ -183,6 +186,8 @@ func sourceActions(p *tgframe.Params, c *tgframe.Container, urls []string) {
 			st.Error("下載失敗")
 		} else {
 			st.Complete("下載完成")
+			// Downloads are slow; the user may be elsewhere by now.
+			toastDone(c, "題目已全部下載，可離線使用")
 		}
 	}
 }

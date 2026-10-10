@@ -64,6 +64,11 @@ func (cf *confirmDialog) ask(action, msg, ok string) {
 	cf.d.Open()
 }
 
+// toastDone tells that an action finished.
+func toastDone(c *tgframe.Container, text string) {
+	tgcomp.Toast(c, text, &tgcomp.ToastConf{Icon: "✅"})
+}
+
 // draw writes the dialog's body; call it after every ask.
 func (cf *confirmDialog) draw() {
 	cf.d.With(func(c *tgframe.Container) {

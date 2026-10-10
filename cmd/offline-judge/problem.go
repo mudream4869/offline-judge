@@ -117,6 +117,7 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	reset := done == "reset:"+key
 	if reset {
 		memo.setText("code_"+key, startCode(lg, pr))
+		toastDone(p.Main, "已還原預設程式碼")
 	}
 	code := tgcomp.CodeInput(p.Main, "程式碼（"+lg.name+"）", &tgcomp.CodeInputConf{
 		ID:        "code_" + key,
@@ -135,6 +136,8 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 		if done == delAction(s.ID) {
 			if err := memo.deleteSubmission(s.ID); err != nil {
 				tgcomp.MessageDanger(p.Main, "刪除失敗："+err.Error())
+			} else {
+				toastDone(p.Main, "已刪除提交 "+submissionNumber(s.ID))
 			}
 		}
 		if tgcomp.ButtonClicked(p.Main, delLabel, delConf(s.ID)) {

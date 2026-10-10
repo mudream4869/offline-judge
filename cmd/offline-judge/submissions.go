@@ -28,6 +28,7 @@ func Submissions(p *tgframe.Params) error {
 		if err := memo.deleteSubmission(sub.ID); err != nil {
 			tgcomp.MessageDanger(p.Main, "刪除失敗："+err.Error())
 		} else {
+			toastDone(p.Main, "已刪除提交 "+submissionNumber(sub.ID))
 			p.Navigate("submissions", listQuery(p.Query))
 			return nil
 		}
