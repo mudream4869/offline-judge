@@ -37,6 +37,7 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	} else {
 		tgcomp.Caption(p.Sidebar, lg.name+" 環境："+lg.loading)
 	}
+	starBox(p, pr.ID)
 
 	// No hints or solution tags in a contest.
 	inContest := contestOf(pr.ID)
@@ -97,6 +98,7 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 		h := tgcomp.Expand(p.Main, "解法標籤（點開會暴雷）", false, &tgcomp.ExpandConf{ID: "soltags_" + pr.ID})
 		tgcomp.Text(h, strings.Join(pr.SolutionTags, "、"))
 	}
+	noteSection(p.Main, pr.ID)
 	if u := reportURL(pr); u != "" {
 		tgcomp.Link(p.Main, "回報題目問題（GitHub issue）", u)
 	}
