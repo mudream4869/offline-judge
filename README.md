@@ -39,7 +39,7 @@ out: {type: "ready"} | {type: "error", error}
 ```
 
 有 `interactor`（互動題）時 `stdin` 是互動程式的輸入，`stdout` 是互動過程，
-`judged` 是互動程式的判定 `{ok, message}`。pyworker 與 wasirun 支援，jsrun 尚未支援。
+`judged` 是互動程式的判定 `{ok, message}`。pyworker、wasirun 與 jsrun 都支援。
 
 C++ 與 Go 的編譯與執行分開：載入編譯器很慢，所以編譯 worker 常駐；執行 worker 很便宜，
 TLE 時直接砍掉。同一份程式碼只編譯一次，所有測資共用。
@@ -156,6 +156,8 @@ legacy 與 2023-07 之後的格式都可以：
 - 遞迴深度約 5000 層（Chromium 的 worker stack 較小，無法調整），太深會 `RangeError` 判 RE；
   深度大的 DFS 要改成迴圈
 - 程式結束的判斷：stdin 事件送完、沒有未完成的 timer 就結束；卡在永遠不會 resolve 的 Promise 不算 TLE
+- 互動題：`fs.readFileSync(0)` 每次回傳互動程式的下一段回答（互動程式結束時為空字串）；`readline` 與
+  `process.stdin` 的事件在程式閒下來、等著輸入時才送下一段回答（範例：`problems/0009-guess-number/_solutions/ac.js`）
 
 ## Go 的限制
 
@@ -333,7 +335,9 @@ export default function interact(input) {
 - `read` 只在程式要讀時才呼叫，程式一次輸出多行時會一起給；回傳 null 後程式讀到 EOF，不會兩邊互等
 - 互動過程以 `→`（程式輸出）、`←`（互動程式回答）記錄，失敗時顯示在測資下
 - Python 與 C++ 的輸出不 flush 也送得到（C++ 的 stdout 是 line buffered）；Go 直接寫 `os.Stdout` 也是，
-  但用 `bufio.Writer`（範本預設）時要在讀之前 `Flush()`。JavaScript 尚未支援
+  但用 `bufio.Writer`（範本預設）時要在讀之前 `Flush()`。JavaScript 的 `console.log` / `process.stdout.write`
+  也直接送到；`fs.readFileSync(0)` 每次回傳互動程式的下一段回答，`readline` 與 `process.stdin` 的事件則在程式閒下來
+  （沒有待執行的事件與 timer）、等著輸入時送來下一段回答
 - 跟 checker 一樣先拿掉儲存與網路 API，但跟選手程式在同一個 worker、與網站同 origin，只能算盡力而為；丟例外算評測失敗
 - `go test ./problems` 會用 Node 讓 `_solutions/ac.py` 跟互動程式對答，所有測資都要通過；
   這裡互動程式在程式輸出完整的一行後就被呼叫，參考解要 `flush=True`

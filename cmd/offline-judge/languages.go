@@ -85,10 +85,11 @@ var (
 				"  return ((t ^ (t >>> 14)) >>> 0) / 4294967296\n}\n" +
 				"const randint = (lo, hi) => lo + Math.floor(rand() * (hi - lo + 1))\n\n" +
 				"console.log(randint(1, 10))\n",
-			hl:      "javascript",
-			code:    "const lines = require('fs').readFileSync(0, 'utf8').split('\\n')\n\n",
-			loading: "載入中",
-			newRun:  func() runner { return NewCodeRunner(assetURL("jsrun.mjs"), "JavaScript") },
+			hl:          "javascript",
+			code:        "const lines = require('fs').readFileSync(0, 'utf8').split('\\n')\n\n",
+			loading:     "載入中",
+			interactive: true,
+			newRun:      func() runner { return NewCodeRunner(assetURL("jsrun.mjs"), "JavaScript") },
 		},
 		{
 			name: "Go",
