@@ -32,7 +32,7 @@
     "id": "0004-two-sum",
     "title": "兩數之和",
     "time_limit_ms": 1000,
-    "version": "2026-10-08 07:29:10",
+    "version": "2026-10-10 12:00:00",
     "solution_tags": [
       "雜湊表"
     ]
