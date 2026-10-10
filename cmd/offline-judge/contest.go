@@ -32,6 +32,7 @@ func Contests(p *tgframe.Params) error {
 		if c.Running(now) && done == "end:"+contestID(c) {
 			c.End = now
 			saveContests(cs)
+			toastDone(p.Main, "已結束「"+c.Title+"」")
 		}
 		if c.Running(now) && tgcomp.ButtonClicked(p.Main, "提前結束", endConf(c)) {
 			cf.ask("end:"+contestID(c), "提前結束「"+c.Title+"」？結束後不能再繼續作答。", "結束")
@@ -39,6 +40,7 @@ func Contests(p *tgframe.Params) error {
 	}
 	for i := len(cs) - 1; i >= 0; i-- {
 		if done == "del:"+contestID(&cs[i]) {
+			toastDone(p.Main, "已刪除「"+cs[i].Title+"」")
 			cs = slices.Delete(cs, i, i+1)
 			saveContests(cs)
 			continue

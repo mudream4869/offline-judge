@@ -36,7 +36,7 @@ func backupSection(c *tgframe.Container) {
 		tgcomp.MessageDanger(c, "匯入失敗："+err.Error())
 		return
 	}
-	tgcomp.MessageSuccess(c, fmt.Sprintf("已匯入 %d 筆提交紀錄、%d 項程式碼與設定", subs, drafts))
+	toastDone(c, fmt.Sprintf("已匯入 %d 筆提交紀錄、%d 項程式碼與設定", subs, drafts))
 }
 
 func exportBackup() ([]byte, error) {
