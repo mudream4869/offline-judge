@@ -249,3 +249,20 @@ func TestConcurrentFallbackIDsAreUnique(t *testing.T) {
 		seen[sub.ID] = true
 	}
 }
+
+func TestForgetRereadsBackend(t *testing.T) {
+	b := &fakeBackend{}
+	s := New(b)
+	if len(s.All()) != 0 || len(s.ForProblem("a")) != 0 {
+		t.Fatal("not empty")
+	}
+	// Written behind the store's back, as an import does.
+	b.rows = []*Submission{{ID: 5, Problem: "a"}}
+	if len(s.All()) != 0 {
+		t.Fatal("cached rows should hide the new one until Forget")
+	}
+	s.Forget()
+	if !slices.Equal(ids(s.All()), []int{5}) || !slices.Equal(ids(s.ForProblem("a")), []int{5}) {
+		t.Errorf("after Forget: %v, %v", ids(s.All()), ids(s.ForProblem("a")))
+	}
+}

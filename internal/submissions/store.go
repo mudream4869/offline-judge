@@ -64,6 +64,15 @@ func (s *Store) Add(sub *Submission) {
 	s.added = append([]*Submission{&record}, s.added...)
 }
 
+// Forget drops what was read from the backend, so the next read sees rows
+// written behind the Store's back, e.g. by an import.
+func (s *Store) Forget() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.byProblem = map[string]*cache{}
+	s.all = cache{}
+}
+
 func (s *Store) ForProblem(problem string) []*Submission {
 	s.mu.Lock()
 	defer s.mu.Unlock()

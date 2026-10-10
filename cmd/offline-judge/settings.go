@@ -86,6 +86,8 @@ func Settings(p *tgframe.Params) error {
 	tgcomp.Button(p.Main, "還原預設", resetConf)
 	tgcomp.Caption(p.Main, "還原成只有 Offline Judge 題庫")
 
+	backupSection(p)
+
 	tgcomp.Subtitle(p.Main, "顯示")
 	setShowSolutionTags(tgcomp.Checkbox(p.Main, "顯示解法標籤（可能暴雷）", &tgcomp.CheckboxConf{
 		Base:    tgframe.Base{ID: "show_solution_tags"},
