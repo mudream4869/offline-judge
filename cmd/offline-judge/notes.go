@@ -42,18 +42,30 @@ func starBox(p *tgframe.Params, key string) {
 	setStarred(key, on)
 }
 
-// noteSection draws the problem's notes, kept with the drafts.
-func noteSection(c *tgframe.Container, key string) {
-	note := memo.getText("note_"+key, "")
-	box := tgcomp.Expand(c, "我的筆記", note != "", &tgcomp.ExpandConf{ID: "note_box_" + key})
-	tgcomp.Caption(box, "解題想法、卡住的地方、要再看的題解；只存在這個瀏覽器，備份會帶上")
-	note = tgcomp.Textarea(box, "筆記（Markdown）", &tgcomp.TextareaConf{
-		ID:      "note_" + key,
-		Height:  6,
-		Default: note,
-	})
-	memo.setText("note_"+key, note)
-	if note != "" {
-		tgcomp.Markdown(box, note)
+// noteButton draws the sidebar button that opens the problem's notes in a
+// dialog; notes are kept with the drafts.
+func noteButton(p *tgframe.Params, key string) {
+	label := "📝 我的筆記"
+	if memo.getText("note_"+key, "") != "" {
+		label += "（有內容）"
 	}
+	d := tgcomp.Dialog(p.Main, "我的筆記", &tgcomp.DialogConf{
+		Base:  tgframe.Base{ID: "note_dialog_" + key},
+		Width: tgcomp.DialogWidthLarge,
+	})
+	if tgcomp.Button(p.Sidebar, label, &tgcomp.ButtonConf{ID: "note_open_" + key}) {
+		d.Open()
+	}
+	d.With(func(c *tgframe.Container) {
+		tgcomp.Caption(c, "解題想法、卡住的地方、要再看的題解；只存在這個瀏覽器，備份會帶上")
+		note := tgcomp.Textarea(c, "筆記（Markdown）", &tgcomp.TextareaConf{
+			ID:      "note_" + key,
+			Height:  10,
+			Default: memo.getText("note_"+key, ""),
+		})
+		memo.setText("note_"+key, note)
+		if note != "" {
+			tgcomp.Markdown(c, note)
+		}
+	})
 }
