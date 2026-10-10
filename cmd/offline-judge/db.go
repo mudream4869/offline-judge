@@ -212,21 +212,50 @@ func saveDraft(key, text string) {
 	logDBErr("寫入", err)
 }
 
+// loadAllDrafts returns every saved draft by key.
+func loadAllDrafts() (map[string]string, error) {
+	keys, err := request(draftStore, "readonly", func(s js.Value) js.Value { return s.Call("getAllKeys") })
+	if err != nil {
+		return nil, err
+	}
+	vals, err := request(draftStore, "readonly", func(s js.Value) js.Value { return s.Call("getAll") })
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	// Both are in key order.
+	for i := range min(keys.Length(), vals.Length()) {
+		if k, v := keys.Index(i), vals.Index(i); k.Type() == js.TypeString && v.Type() == js.TypeString {
+			out[k.String()] = v.String()
+		}
+	}
+	return out, nil
+}
+
 // saveSubmission stores s and sets its ID.
 func saveSubmission(s *submission) error {
+	return putSubmission(s, 0)
+}
+
+// putSubmission stores s under id, or a new ID if id is 0, and sets s.ID.
+func putSubmission(s *submission, id int) error {
 	rep, err := json.Marshal(s.Report)
 	if err != nil {
 		return err
 	}
+	row := map[string]any{
+		"problem": s.Problem,
+		"version": s.Version,
+		"lang":    s.Lang,
+		"code":    s.Code,
+		"at":      float64(s.At.UnixMilli()),
+		"report":  string(rep),
+	}
+	if id > 0 {
+		row["id"] = id
+	}
 	v, err := request(subStore, "readwrite", func(st js.Value) js.Value {
-		return st.Call("add", map[string]any{
-			"problem": s.Problem,
-			"version": s.Version,
-			"lang":    s.Lang,
-			"code":    s.Code,
-			"at":      float64(s.At.UnixMilli()),
-			"report":  string(rep),
-		})
+		return st.Call("add", row)
 	})
 	if err != nil {
 		return err
