@@ -29,6 +29,9 @@ func Problems(p *tgframe.Params) error {
 
 	e := pickedEntry(p, es)
 	if e == nil {
+		if p.Query.Get("share") != "" && sharedSource(p) {
+			return nil
+		}
 		problemList(p, ct)
 		return nil
 	}
@@ -67,6 +70,7 @@ func pickedEntry(p *tgframe.Params, es []source.Entry) *source.Entry {
 func listQuery(q url.Values) url.Values {
 	q = maps.Clone(q)
 	q.Del("id")
+	q.Del("share")
 	return q
 }
 

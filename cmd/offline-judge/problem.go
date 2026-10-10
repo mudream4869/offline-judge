@@ -46,6 +46,7 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 			inContest.Title, inContest.End.Format("15:04")))
 		tgcomp.PageLink(p.Main, "查看模擬賽計分板", "contest", nil)
 	}
+	sharedBox(p, pr)
 	tgcomp.Markdown(p.Main, pr.Statement)
 	info := fmt.Sprintf("時間限制（%s）：%d ms", lg.name, pr.TimeLimitFor(lg.id).Milliseconds())
 	if pr.Version != "" {
@@ -122,6 +123,7 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	})
 	memo.setText("code_"+key, code)
 	tgcomp.Button(p.Main, resetLabel, resetConf)
+	shareButton(p.Main, pr, lg, code, key)
 
 	// Before drawing, so every panel sees the deletion.
 	for _, s := range memo.submissions(pr.ID) {

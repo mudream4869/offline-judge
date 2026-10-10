@@ -135,6 +135,7 @@ type problemRef struct {
 	set   *source.Set
 	id    string // in set
 	label string // of the source
+	url   string // of the source
 }
 
 // catalog is the problems of every source; entry IDs are problem keys.
@@ -164,7 +165,7 @@ func openCatalog(c *tgframe.Container, ctx context.Context) *catalog {
 			if _, dup := ct.refs[key]; dup {
 				continue // the same source twice, e.g. under two refs
 			}
-			ct.refs[key] = problemRef{set: s, id: e.ID, label: label}
+			ct.refs[key] = problemRef{set: s, id: e.ID, label: label, url: url}
 			e.ID = key
 			ct.entries = append(ct.entries, e)
 		}
