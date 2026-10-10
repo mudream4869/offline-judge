@@ -229,7 +229,8 @@ go test ./problems -update   # 從每題的 problem.json 重新產生 problems.j
 | `float-diff [absolute\|relative\|absolute-relative] [誤差]` | 同 `white-diff`，但答案中含 `.`、`e` 或 `E` 的數字允許誤差（預設 `absolute-relative 1e-6`，絕對或相對誤差其一在範圍內即可）；整數仍要相同 |
 | `tokens [參數…]` | Kattis 預設驗證器：整份輸出以空白分隔逐項比對，不分換行、**不分大小寫**；參數同 Kattis：`case_sensitive`、`space_change_sensitive`、`float_tolerance ε`、`float_absolute_tolerance ε`、`float_relative_tolerance ε` |
 
-WA 時會在「比對結果」指出第一個不同的行與項。有 `checker.js` 或 `interactor.js` 時不能設定 `compare`。
+WA 時會在「比對結果」指出第一個不同的行與項，並把預期輸出與你的輸出左右並排，
+從第一個不同的行往上 5 行起列出 40 行，依 `compare` 判定逐行標出不同的行（`✗`），完整輸出收在下方。有 `checker.js` 或 `interactor.js` 時不能設定 `compare`。
 
 `problems.json` 沒更新、或 `version` 格式不對的話 `go test` 會失敗。其他來源也要在資料夾根目錄放 `problems.json`：
 
