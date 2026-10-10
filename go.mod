@@ -3,7 +3,7 @@ module github.com/mudream4869/offline-judge
 go 1.27.2
 
 require (
-	github.com/voilelab/toolgui v0.14.0
+	github.com/voilelab/toolgui v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
