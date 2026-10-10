@@ -148,6 +148,14 @@ func submitPanel(p *tgframe.Params, c *tgframe.Container, lg *lang,
 			return
 		}
 	}
+	if samples := pr.Samples(); len(samples) > 0 &&
+		tgcomp.Button(c, "測試範例", &tgcomp.ButtonConf{ID: "samples_" + key}) {
+		if rep := judgeCases(p.Context, c, lg, pr, code, samples); rep != nil {
+			tgcomp.Caption(c, fmt.Sprintf("只跑了 %d 筆範例，結果不存成提交紀錄", len(samples)))
+			showReport(c, pr, rep, "samples_"+key)
+		}
+		return
+	}
 
 	// Latest submission in this language.
 	for _, s := range memo.submissions(pr.ID) {
@@ -164,15 +172,40 @@ func submitPanel(p *tgframe.Params, c *tgframe.Container, lg *lang,
 func judgeAndSave(ctx context.Context, c *tgframe.Container, lg *lang,
 	pr *problems.Problem, code string) *submission {
 
+	rep := judgeCases(ctx, c, lg, pr, code, pr.Cases)
+	if rep == nil {
+		return nil
+	}
+	sub := &submission{
+		Problem: pr.ID,
+		Version: pr.Version,
+		Lang:    lg.id,
+		Code:    code,
+		At:      time.Now(),
+		Report:  *rep,
+	}
+	memo.addSubmission(sub)
+	return sub
+}
+
+// judgeCases judges code in lg against cases of pr, showing progress in c.
+// Subtasks count only when cases are all of pr's. On failure it says why in
+// c and returns nil. The report is slim.
+func judgeCases(ctx context.Context, c *tgframe.Container, lg *lang,
+	pr *problems.Problem, code string, cases []judge.Case) *judge.Report {
+
 	spec := judge.Spec{Limit: pr.TimeLimitFor(lg.id), Interactor: pr.Interactor,
-		Grader: pr.Graders[lg.id], Compare: pr.Compare, Subtasks: pr.JudgeSubtasks()}
+		Grader: pr.Graders[lg.id], Compare: pr.Compare}
+	if len(cases) == len(pr.Cases) {
+		spec.Subtasks = pr.JudgeSubtasks()
+	}
 	if pr.Checker != "" {
 		spec.Check = checkRunner().Checker(pr.Checker)
 	}
 	st := tgcomp.Status(c, "評測中…")
-	rep, err := judge.Judge(ctx, lg.runner(), code, pr.Cases, spec,
+	rep, err := judge.Judge(ctx, lg.runner(), code, cases, spec,
 		func(done int, cr judge.CaseResult) {
-			st.Update(fmt.Sprintf("評測中 %d/%d", done, len(pr.Cases)))
+			st.Update(fmt.Sprintf("評測中 %d/%d", done, len(cases)))
 			st.Write(fmt.Sprintf("%s：%s（%s）", cr.Name, cr.Verdict, fmtTime(cr.Time)))
 		})
 	if err != nil {
@@ -181,16 +214,8 @@ func judgeAndSave(ctx context.Context, c *tgframe.Container, lg *lang,
 		return nil
 	}
 	st.Complete("評測完成")
-	sub := &submission{
-		Problem: pr.ID,
-		Version: pr.Version,
-		Lang:    lg.id,
-		Code:    code,
-		At:      time.Now(),
-		Report:  slim(rep),
-	}
-	memo.addSubmission(sub)
-	return sub
+	rep = slim(rep)
+	return &rep
 }
 
 // rejudgeButton offers to judge s again against pr, the current version,
