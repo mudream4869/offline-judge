@@ -200,10 +200,6 @@ try {
     const byLang = {}
     for (const file of p.solutions) {
       const lang = LANGS[extname(file)]
-      if (p.interactor && lang === 'js') {
-        console.log(`  ${file.padEnd(10)} 略過（JavaScript 尚未支援互動題）`)
-        continue
-      }
       const r = await bench(page, p, file, judge)
       const limit = limitOf(p.meta, lang)
       let mark

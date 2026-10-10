@@ -2,10 +2,16 @@
 // ('fs', 'readline'), process.stdin/stdout, console. One worker per run
 // (fatal: true), so globals don't leak between runs.
 //
-// in:  {id, code, stdin, grader?, outputLimit?}  (outputLimit: stdout + stderr)
+// in:  {id, code, stdin, grader?, interactor?, outputLimit?}  (outputLimit: stdout + stderr)
 //      With grader, the grader is main and require('./solution') is the code.
+//      With interactor, stdin is its input and the program reads what it
+//      answers: fs.readFileSync(0) takes the next answer, and stdin / readline
+//      events get one whenever the program is idle, waiting for input.
 // out: {type: "ready"}
-//      {type: "result", id, status: "ok"|"re"|"ole", stdout, stderr, ms, fatal}
+//      {type: "result", id, status: "ok"|"re"|"ole", stdout, stderr, ms, fatal,
+//       judged?, iaError?}
+
+import { lockdown, importDefault, Interaction, interactionResult } from './sandbox.mjs'
 
 const realSetTimeout = setTimeout
 const realClearTimeout = clearTimeout
@@ -103,8 +109,27 @@ class OutputLimit {}
 
 // ---- run ----
 
-self.onmessage = async ({ data: { id, code, stdin, grader, outputLimit = Infinity } }) => {
+self.onmessage = async ({ data: { id, code, stdin, grader, interactor, outputLimit = Infinity } }) => {
+  let ia = null
+  if (interactor) {
+    lockdown()
+    try {
+      ia = new Interaction(await importDefault(interactor, 'interactor.js'), stdin)
+    } catch (e) {
+      self.postMessage({ type: 'result', id, status: 'ok', stdout: '', stderr: '', ms: 0,
+        fatal: true, iaError: String(e?.stack || e) })
+      return
+    }
+    stdin = ''
+  }
   const out = []
+  let sent = 0 // of out's text, what the interactor has seen
+  const takeOut = () => {
+    const s = out.join('')
+    const rest = s.slice(sent)
+    sent = s.length
+    return rest
+  }
   // stdout + stderr written, in UTF-16 code units: close enough to bytes for a limit
   let outSize = 0
   const err = []
@@ -115,9 +140,14 @@ self.onmessage = async ({ data: { id, code, stdin, grader, outputLimit = Infinit
     if (done) return
     done = true
     if (extra) err.push(extra)
+    let ms = performance.now() - t0
+    let res = { stdout: out.join('') }
+    if (ia) {
+      res = interactionResult(ia, takeOut())
+      ms -= ia.ms
+    }
     self.postMessage({
-      type: 'result', id, status, stdout: out.join(''), stderr: err.join(''),
-      ms: performance.now() - t0, fatal: true,
+      type: 'result', id, status, stderr: err.join(''), ms, fatal: true, ...res,
     })
   }
   // put appends s to buf (stdout or stderr), ending the run past the output limit.
@@ -181,16 +211,42 @@ self.onmessage = async ({ data: { id, code, stdin, grader, outputLimit = Infinit
   const lines = stdin.split('\n').map((l) => l.replace(/\r$/, ''))
   if (lines[lines.length - 1] === '') lines.pop()
 
+  // With an interactor, readers get its answers, one each time the program
+  // is idle; feed reports whether it handed one out.
+  const readers = [] // {wants(), data(s), end()}
+  let iaEnded = false
+  const iaRead = () => {
+    const r = iaEnded ? null : ia.read(takeOut())
+    if (r == null) iaEnded = true
+    return r
+  }
+  const feed = () => {
+    const live = readers.filter((r) => r.wants())
+    if (!ia || iaEnded || live.length === 0) return false
+    const r = iaRead()
+    for (const rd of live) r == null ? rd.end() : rd.data(r)
+    return true
+  }
+
   const pstdin = new Emitter()
   let stdinEnc = null
   pstdin.fd = 0
   pstdin.setEncoding = (e) => { stdinEnc = e; return pstdin }
   pstdin.resume = pstdin.pause = () => pstdin
-  addSource(() => {
-    if (stdin !== '') pstdin.emit('data', stdinEnc ? stdin : Buffer.from(stdin))
-    pstdin.emit('end')
-    pstdin.emit('close')
-  })
+  if (ia) {
+    let ended = false
+    readers.push({
+      wants: () => !ended && ['data', 'end'].some((ev) => pstdin.ls[ev]?.length),
+      data: (s) => pstdin.emit('data', stdinEnc ? s : Buffer.from(s)),
+      end: () => { ended = true; pstdin.emit('end'); pstdin.emit('close') },
+    })
+  } else {
+    addSource(() => {
+      if (stdin !== '') pstdin.emit('data', stdinEnc ? stdin : Buffer.from(stdin))
+      pstdin.emit('end')
+      pstdin.emit('close')
+    })
+  }
 
   const writer = (push) => ({
     write: (s, ...rest) => {
@@ -235,7 +291,8 @@ self.onmessage = async ({ data: { id, code, stdin, grader, outputLimit = Infinit
     readFileSync(p, opt) {
       if (!isStdin(p)) throw new Error(`ENOENT: no such file or directory, open '${p}'`)
       const e = typeof opt === 'string' ? opt : opt?.encoding
-      return e ? stdin : Buffer.from(stdin)
+      const s = ia ? iaRead() ?? '' : stdin
+      return e ? s : Buffer.from(s)
     },
     writeSync(fd, s) {
       const t = typeof s === 'string' ? s : dec.decode(s)
@@ -262,6 +319,25 @@ self.onmessage = async ({ data: { id, code, stdin, grader, outputLimit = Infinit
           await new Promise((r) => { notify = r })
           notify = null
         }
+      }
+      if (ia) {
+        let buf = ''
+        readers.push({
+          wants: () => !closed,
+          data: (s) => {
+            const parts = (buf + s).split('\n')
+            buf = parts.pop()
+            for (const l of parts) {
+              if (closed) return
+              rl.emit('line', l.replace(/\r$/, ''))
+            }
+          },
+          end: () => {
+            if (buf && !closed) rl.emit('line', buf)
+            rl.close()
+          },
+        })
+        return rl
       }
       addSource(() => {
         for (const l of lines) {
@@ -320,7 +396,13 @@ self.onmessage = async ({ data: { id, code, stdin, grader, outputLimit = Infinit
         guard(sources.shift())()
         continue
       }
-      if (pending === 0) break
+      if (pending === 0) {
+        // Idle: the program waits for input, or is done.
+        const fed = guard(feed)()
+        if (done) return
+        if (fed) continue
+        break
+      }
       await new Promise((r) => { wake = r })
       wake = null
     }
