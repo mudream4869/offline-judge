@@ -16,20 +16,26 @@ import (
 func Settings(p *tgframe.Params) error {
 	tgcomp.Title(p.Main, "設定")
 	srcTab, tmplTab, viewTab, backupTab := tgcomp.Tab4(p.Main, "題目來源", "預設程式碼", "顯示", "備份")
-	sourcesSection(p, srcTab)
-	templateSection(tmplTab)
+	cf := newConfirm(p, "settings")
+	done := cf.confirmed()
+	sourcesSection(p, srcTab, cf, done)
+	templateSection(tmplTab, cf, done)
 	displaySection(viewTab)
 	backupSection(backupTab)
+	cf.draw()
 	return nil
 }
 
 // sourcesSection lists, adds and removes problem sources.
-func sourcesSection(p *tgframe.Params, c *tgframe.Container) {
+func sourcesSection(p *tgframe.Params, c *tgframe.Container, cf *confirmDialog, done string) {
 	// Clicks first, so everything below sees the new list.
 	urls := sourceURLs()
 	for _, url := range urls {
-		if tgcomp.ButtonClicked(c, "移除", removeConf(url)) {
+		if done == "rm:"+url {
 			setSourceURLs(slices.DeleteFunc(slices.Clone(urls), func(u string) bool { return u == url }))
+		}
+		if tgcomp.ButtonClicked(c, "移除", removeConf(url)) {
+			cf.ask("rm:"+url, "移除來源「"+sourceLabel(url)+"」？之後可以再加回來。", "移除")
 		}
 	}
 	for _, r := range recommended {
@@ -38,8 +44,11 @@ func sourcesSection(p *tgframe.Params, c *tgframe.Container) {
 		}
 	}
 	resetConf := &tgcomp.ButtonConf{ID: "source_reset"}
-	if tgcomp.ButtonClicked(c, "還原預設", resetConf) {
+	if done == "src_reset" {
 		setSourceURLs([]string{defaultSource})
+	}
+	if tgcomp.ButtonClicked(c, "還原預設", resetConf) {
+		cf.ask("src_reset", "還原成只有 Offline Judge 題庫？其他來源都會被移除。", "還原")
 	}
 	urls = sourceURLs()
 
@@ -106,7 +115,7 @@ func displaySection(c *tgframe.Container) {
 }
 
 // templateSection edits each language's default code.
-func templateSection(c *tgframe.Container) {
+func templateSection(c *tgframe.Container, cf *confirmDialog, done string) {
 	tgcomp.Caption(c, "新題目的編輯器一開始放這段程式碼，「還原預設程式碼」也還原成它；"+
 		"函式題用題目附的 template")
 	names := make([]string, len(langs))
@@ -122,7 +131,10 @@ func templateSection(c *tgframe.Container) {
 	lg := langs[*li]
 	key := templateKey(lg)
 	resetConf := &tgcomp.ButtonConf{ID: "template_reset_" + lg.id}
-	reset := tgcomp.ButtonClicked(c, "還原成內建範本", resetConf)
+	if tgcomp.ButtonClicked(c, "還原成內建範本", resetConf) {
+		cf.ask("tmpl_reset:"+lg.id, lg.name+" 的預設程式碼會還原成內建範本，無法復原。確定嗎？", "還原")
+	}
+	reset := done == "tmpl_reset:"+lg.id
 	if reset {
 		setUserTemplate(lg, lg.code)
 	}

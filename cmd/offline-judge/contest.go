@@ -25,19 +25,29 @@ func Contests(p *tgframe.Params) error {
 	now := time.Now()
 
 	// Clicks first, so everything below sees the change.
+	cf := newConfirm(p, "contest")
+	done := cf.confirmed()
 	for i := range cs {
 		c := &cs[i]
-		if c.Running(now) && tgcomp.ButtonClicked(p.Main, "提前結束", endConf(c)) {
+		if c.Running(now) && done == "end:"+contestID(c) {
 			c.End = now
 			saveContests(cs)
 		}
-	}
-	for i := len(cs) - 1; i >= 0; i-- {
-		if tgcomp.ButtonClicked(p.Main, delLabel, contestDelConf(&cs[i])) {
-			cs = slices.Delete(cs, i, i+1)
-			saveContests(cs)
+		if c.Running(now) && tgcomp.ButtonClicked(p.Main, "提前結束", endConf(c)) {
+			cf.ask("end:"+contestID(c), "提前結束「"+c.Title+"」？結束後不能再繼續作答。", "結束")
 		}
 	}
+	for i := len(cs) - 1; i >= 0; i-- {
+		if done == "del:"+contestID(&cs[i]) {
+			cs = slices.Delete(cs, i, i+1)
+			saveContests(cs)
+			continue
+		}
+		if tgcomp.ButtonClicked(p.Main, delLabel, contestDelConf(&cs[i])) {
+			cf.ask("del:"+contestID(&cs[i]), "刪除模擬賽「"+cs[i].Title+"」？刪除後無法復原。", "刪除")
+		}
+	}
+	cf.draw()
 
 	ct := openCatalog(p.Main, p.Context)
 	if cur := runningContest(cs, now); cur != nil {

@@ -23,7 +23,8 @@ func Submissions(p *tgframe.Params) error {
 		submissionList(p, memo.allSubmissions())
 		return nil
 	}
-	if tgcomp.ButtonClicked(p.Main, delLabel, delConf(sub.ID)) {
+	cf := newConfirm(p, "submission")
+	if cf.confirmed() == delAction(sub.ID) {
 		if err := memo.deleteSubmission(sub.ID); err != nil {
 			tgcomp.MessageDanger(p.Main, "刪除失敗："+err.Error())
 		} else {
@@ -31,6 +32,10 @@ func Submissions(p *tgframe.Params) error {
 			return nil
 		}
 	}
+	if tgcomp.ButtonClicked(p.Main, delLabel, delConf(sub.ID)) {
+		askDelete(cf, sub.ID)
+	}
+	cf.draw()
 	return showSubmission(p, sub)
 }
 
