@@ -86,6 +86,8 @@ func Settings(p *tgframe.Params) error {
 	tgcomp.Button(p.Main, "還原預設", resetConf)
 	tgcomp.Caption(p.Main, "還原成只有 Offline Judge 題庫")
 
+	templateSection(p)
+
 	backupSection(p)
 
 	tgcomp.Subtitle(p.Main, "顯示")
@@ -95,6 +97,41 @@ func Settings(p *tgframe.Params) error {
 	}))
 	tgcomp.Caption(p.Main, "解法標籤會提示要用的演算法，預設收合；開啟後顯示在題目列表與題目頁，也能用來篩選")
 	return nil
+}
+
+// templateSection edits each language's default code.
+func templateSection(p *tgframe.Params) {
+	tgcomp.Subtitle(p.Main, "預設程式碼")
+	tgcomp.Caption(p.Main, "新題目的編輯器一開始放這段程式碼，「還原預設程式碼」也還原成它；"+
+		"函式題用題目附的 template")
+	names := make([]string, len(langs))
+	for i, l := range langs {
+		names[i] = l.name
+	}
+	li := tgcomp.Select(p.Main, "語言", names, (&tgcomp.SelectConf{
+		Base: tgframe.Base{ID: "template_lang"},
+	}).SetDefault(memo.getLang()))
+	if li == nil {
+		return
+	}
+	lg := langs[*li]
+	key := templateKey(lg)
+	resetConf := &tgcomp.ButtonConf{ID: "template_reset_" + lg.id}
+	reset := tgcomp.ButtonClicked(p.Main, "還原成內建範本", resetConf)
+	if reset {
+		setUserTemplate(lg, lg.code)
+	}
+	code := tgcomp.CodeInput(p.Main, lg.name+" 預設程式碼", &tgcomp.CodeInputConf{
+		ID:        key,
+		Language:  lg.hl,
+		Height:    10,
+		MaxHeight: 30,
+		Default:   userTemplate(lg),
+		ResetKey:  codeResetKey(key, reset),
+	})
+	setUserTemplate(lg, code)
+	tgcomp.Button(p.Main, "還原成內建範本", resetConf)
+	tgcomp.Caption(p.Main, "已經改過的題目不會跟著變；要套用到某一題，在題目頁按「還原預設程式碼」")
 }
 
 // sourceActions checks for updates and downloads, for every loaded source.

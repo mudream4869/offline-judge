@@ -279,7 +279,7 @@ func startCode(lg *lang, pr *problems.Problem) string {
 	if t := pr.Templates[lg.id]; t != "" {
 		return t
 	}
-	return lg.code
+	return userTemplate(lg)
 }
 
 // graderLangs names the languages pr has graders for.
