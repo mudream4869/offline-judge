@@ -3,6 +3,7 @@
 package main
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/mudream4869/offline-judge/internal/submissions"
@@ -58,6 +59,18 @@ func (s *store) setText(key, v string) {
 	}
 	s.text[key] = v
 	saveDraft(key, v)
+}
+
+// forgetDefaults drops cached texts under prefix that are def, so editors
+// left as the old default pick up a new one.
+func (s *store) forgetDefaults(prefix, def string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, v := range s.text {
+		if strings.HasPrefix(k, prefix) && v == def {
+			delete(s.text, k)
+		}
+	}
 }
 
 func (s *store) submissions(problem string) []*submission {

@@ -112,3 +112,25 @@ func assetURL(name string) string {
 	}
 	return u
 }
+
+// userTemplate is lg's default code as set in 設定, or lg.code.
+func userTemplate(lg *lang) string {
+	if t := memo.getText(templateKey(lg), ""); t != "" {
+		return t
+	}
+	return lg.code
+}
+
+// setUserTemplate saves code as lg's default; lg.code is saved as "", so
+// it follows changes to the built-in one.
+func setUserTemplate(lg *lang, code string) {
+	if old := userTemplate(lg); old != code {
+		memo.forgetDefaults("code_"+lg.id+"_", old)
+	}
+	if code == lg.code {
+		code = ""
+	}
+	memo.setText(templateKey(lg), code)
+}
+
+func templateKey(lg *lang) string { return "template_" + lg.id }
