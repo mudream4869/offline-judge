@@ -14,30 +14,29 @@ import (
 )
 
 // backupSection draws 設定's export and import.
-func backupSection(p *tgframe.Params) {
-	tgcomp.Subtitle(p.Main, "備份")
-	tgcomp.Caption(p.Main, "程式碼、提交紀錄、模擬賽與設定只存在這個瀏覽器裡；清除網站資料就會不見。"+
+func backupSection(c *tgframe.Container) {
+	tgcomp.Caption(c, "程式碼、提交紀錄、模擬賽與設定只存在這個瀏覽器裡；清除網站資料就會不見。"+
 		"匯出成檔案保存，或在另一台電腦、另一個瀏覽器匯入")
-	tgcomp.DownloadFileFunc(p.Main, "匯出", exportBackup, &tgcomp.DownloadFileConf{
+	tgcomp.DownloadFileFunc(c, "匯出", exportBackup, &tgcomp.DownloadFileConf{
 		Base:     tgframe.Base{ID: "backup_export"},
 		MIME:     "application/json",
 		Filename: "offline-judge-" + time.Now().Format("20060102") + ".json",
 	})
 
-	f := tgcomp.FileUpload(p.Main, "匯入備份檔", ".json", &tgcomp.FileUploadConf{
+	f := tgcomp.FileUpload(c, "匯入備份檔", ".json", &tgcomp.FileUploadConf{
 		Base: tgframe.Base{ID: "backup_file"},
 	})
-	tgcomp.Caption(p.Main, "匯入只會補上這裡沒有的資料，不會覆蓋：已有的程式碼與設定保留，"+
+	tgcomp.Caption(c, "匯入只會補上這裡沒有的資料，不會覆蓋：已有的程式碼與設定保留，"+
 		"提交紀錄與模擬賽合併，重複的略過")
-	if !tgcomp.Button(p.Main, "匯入", &tgcomp.ButtonConf{ID: "backup_import", Disabled: f == nil}) || f == nil {
+	if !tgcomp.Button(c, "匯入", &tgcomp.ButtonConf{ID: "backup_import", Disabled: f == nil}) || f == nil {
 		return
 	}
 	drafts, subs, err := importBackup(f)
 	if err != nil {
-		tgcomp.MessageDanger(p.Main, "匯入失敗："+err.Error())
+		tgcomp.MessageDanger(c, "匯入失敗："+err.Error())
 		return
 	}
-	tgcomp.MessageSuccess(p.Main, fmt.Sprintf("已匯入 %d 筆提交紀錄、%d 項程式碼與設定", subs, drafts))
+	tgcomp.MessageSuccess(c, fmt.Sprintf("已匯入 %d 筆提交紀錄、%d 項程式碼與設定", subs, drafts))
 }
 
 func exportBackup() ([]byte, error) {
