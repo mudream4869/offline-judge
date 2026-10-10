@@ -38,6 +38,13 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 		tgcomp.Caption(p.Sidebar, lg.name+" 環境："+lg.loading)
 	}
 
+	// No hints or solution tags in a contest.
+	inContest := contestOf(pr.ID)
+	if inContest != nil {
+		tgcomp.MessageInfo(p.Main, fmt.Sprintf("模擬賽「%s」進行中，%s 結束",
+			inContest.Title, inContest.End.Format("15:04")))
+		tgcomp.PageLink(p.Main, "查看模擬賽計分板", "contest", nil)
+	}
 	tgcomp.Markdown(p.Main, pr.Statement)
 	info := fmt.Sprintf("時間限制（%s）：%d ms", lg.name, pr.TimeLimitFor(lg.id).Milliseconds())
 	if pr.Version != "" {
@@ -46,7 +53,7 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 	if len(pr.Tags) > 0 {
 		info += "，標籤：" + strings.Join(pr.Tags, "、")
 	}
-	showSol := showSolutionTags()
+	showSol := showSolutionTags() && inContest == nil
 	if showSol && len(pr.SolutionTags) > 0 {
 		info += "，解法標籤：" + strings.Join(pr.SolutionTags, "、")
 	}
@@ -82,11 +89,11 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 		tgcomp.Markdown(p.Main, subtaskTable(pr.Subtasks))
 	}
 
-	if pr.Hint != "" {
+	if pr.Hint != "" && inContest == nil {
 		h := tgcomp.Expand(p.Main, "提示", false, &tgcomp.ExpandConf{ID: "hint_" + pr.ID})
 		tgcomp.Markdown(h, pr.Hint)
 	}
-	if !showSol && len(pr.SolutionTags) > 0 {
+	if !showSol && len(pr.SolutionTags) > 0 && inContest == nil {
 		h := tgcomp.Expand(p.Main, "解法標籤（點開會暴雷）", false, &tgcomp.ExpandConf{ID: "soltags_" + pr.ID})
 		tgcomp.Text(h, strings.Join(pr.SolutionTags, "、"))
 	}
