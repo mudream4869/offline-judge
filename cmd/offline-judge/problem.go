@@ -107,8 +107,13 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 
 	// One editor per problem and language, so switching keeps the code.
 	key := lg.id + "_" + pr.ID
+	cf := newConfirm(p, "problem")
+	done := cf.confirmed()
 	resetConf := &tgcomp.ButtonConf{ID: "reset_code_" + key}
-	reset := tgcomp.ButtonClicked(p.Main, resetLabel, resetConf)
+	if tgcomp.ButtonClicked(p.Main, resetLabel, resetConf) {
+		cf.ask("reset:"+key, "目前的程式碼會被預設程式碼取代，無法復原。確定要還原嗎？", "還原")
+	}
+	reset := done == "reset:"+key
 	if reset {
 		memo.setText("code_"+key, startCode(lg, pr))
 	}
@@ -125,12 +130,16 @@ func showProblem(p *tgframe.Params, pr *problems.Problem) error {
 
 	// Before drawing, so every panel sees the deletion.
 	for _, s := range memo.submissions(pr.ID) {
-		if tgcomp.ButtonClicked(p.Main, delLabel, delConf(s.ID)) {
+		if done == delAction(s.ID) {
 			if err := memo.deleteSubmission(s.ID); err != nil {
 				tgcomp.MessageDanger(p.Main, "刪除失敗："+err.Error())
 			}
 		}
+		if tgcomp.ButtonClicked(p.Main, delLabel, delConf(s.ID)) {
+			askDelete(cf, s.ID)
+		}
 	}
+	cf.draw()
 
 	submitTab, customTab, stressTab, histTab := tgcomp.Tab4(p.Main, "提交", "自訂輸入", "對拍", "紀錄")
 	submitPanel(p, submitTab, lg, key, pr, code)

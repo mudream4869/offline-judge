@@ -26,6 +26,12 @@ func delConf(id int) *tgcomp.ButtonConf {
 	return &tgcomp.ButtonConf{ID: fmt.Sprintf("del_%d", id), Color: tcutil.ColorDanger}
 }
 
+func delAction(id int) string { return fmt.Sprintf("del:%d", id) }
+
+func askDelete(cf *confirmDialog, id int) {
+	cf.ask(delAction(id), fmt.Sprintf("刪除提交 %s？刪除後無法復原。", submissionNumber(id)), "刪除")
+}
+
 // slim keeps only what showReport shows, so stored reports stay small.
 func slim(rep judge.Report) judge.Report {
 	rep.CompileError = cut(rep.CompileError)
