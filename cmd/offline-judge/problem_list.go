@@ -138,8 +138,16 @@ func problemList(p *tgframe.Params, ct *catalog) {
 	if filter > 0 {
 		q.Set("status", statusKeys[filter])
 	}
+	onlyStarred := tgcomp.Checkbox(p.Sidebar, "只看收藏", &tgcomp.CheckboxConf{
+		Base:    tgframe.Base{ID: "problem_starred"},
+		Default: p.Query.Get("star") != "",
+	})
+	if onlyStarred {
+		q.Set("star", "1")
+	}
 	p.ReplaceQuery(q)
 	status := solveStatus(memo.allSubmissions())
+	stars := starred()
 
 	tgcomp.Title(p.Main, "題目列表")
 	tgcomp.Caption(p.Main, "點一題開始作答")
@@ -153,8 +161,13 @@ func problemList(p *tgframe.Params, ct *catalog) {
 		st := status[e.ID]
 		if len(srcs) > 0 && !slices.Contains(srcs, ref.label) || !hasTags(tags, want) ||
 			!strings.Contains(strings.ToLower(num+" "+e.Title), query) ||
-			filter == 1 && st != solvedMark || filter == 2 && st == solvedMark {
+			filter == 1 && st != solvedMark || filter == 2 && st == solvedMark ||
+			onlyStarred && !slices.Contains(stars, e.ID) {
 			continue
+		}
+		star := ""
+		if slices.Contains(stars, e.ID) {
+			star = "★"
 		}
 		off := ""
 		if e.Cached {
@@ -167,17 +180,21 @@ func problemList(p *tgframe.Params, ct *catalog) {
 		}
 		limit := tgcomp.NumberCell(float64(e.TimeLimit.Milliseconds())).
 			WithDisplay(fmtLimits(e.TimeLimit, e.TimeLimits))
-		rows = append(rows, []tgcomp.Cell{tgcomp.TextCell(st), tgcomp.TextCell(num),
+		rows = append(rows, []tgcomp.Cell{tgcomp.TextCell(star), tgcomp.TextCell(st), tgcomp.TextCell(num),
 			tgcomp.TextCell(title), tgcomp.TextCell(strings.Join(tags, "、")), limit,
 			tgcomp.TextCell(e.Version), tgcomp.TextCell(off)})
 	}
 	if len(rows) == 0 {
+		if onlyStarred && len(stars) == 0 {
+			tgcomp.MessageInfo(p.Main, "還沒有收藏的題目；在題目頁的側欄勾選「★ 收藏這題」")
+			return
+		}
 		tgcomp.MessageInfo(p.Main, "沒有符合的題目")
 		return
 	}
-	cols := make([]tgcomp.DataFrameColumnConf, 7)
-	cols[4].Type = tgcomp.ColumnTypeNumber // sorted by the default limit
-	sel := tgcomp.DataFrameCells(p.Main, []string{"狀態", "編號", "題目", "標籤", "時間限制", "版本", "可離線"}, rows,
+	cols := make([]tgcomp.DataFrameColumnConf, 8)
+	cols[5].Type = tgcomp.ColumnTypeNumber // sorted by the default limit
+	sel := tgcomp.DataFrameCells(p.Main, []string{"★", "狀態", "編號", "題目", "標籤", "時間限制", "版本", "可離線"}, rows,
 		(&tgcomp.DataFrameConf{
 			Base:       tgframe.Base{ID: "problem_list"},
 			PageSize:   100,
