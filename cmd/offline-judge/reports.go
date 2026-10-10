@@ -4,6 +4,9 @@ package main
 
 import (
 	"fmt"
+	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/voilelab/toolgui/toolgui/tgcomp"
@@ -110,11 +113,13 @@ func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report, i
 		case pr.Checker != "":
 			tgcomp.Text(box, "參考輸出（答案不唯一）")
 			tgcomp.Code(box, cut(tc.Output), &tgcomp.CodeConf{Language: "text"})
+		case cr.Verdict == judge.WA:
+			sideBySide(box, pr.Compare, cr.Stdout, tc.Output, id)
 		default:
 			tgcomp.Text(box, "預期輸出")
 			tgcomp.Code(box, cut(tc.Output), &tgcomp.CodeConf{Language: "text"})
 		}
-		if cr.Verdict != judge.TLE {
+		if cr.Verdict != judge.TLE && (interactive || pr.Checker != "" || cr.Verdict != judge.WA) {
 			tgcomp.Text(box, stdoutLabel(pr))
 			tgcomp.Code(box, cut(cr.Stdout), &tgcomp.CodeConf{Language: "text"})
 		}
@@ -135,6 +140,56 @@ func showReport(c *tgframe.Container, pr *problems.Problem, rep *judge.Report, i
 		}
 		break
 	}
+}
+
+// Side by side, up to diffLines lines from diffBefore lines above the first
+// differing one.
+const (
+	diffLines  = 40
+	diffBefore = 5
+	diffWidth  = 120 // runes per line
+)
+
+// sideBySide shows the expected and actual outputs in two columns, the
+// lines that differ under cm marked, and both in full below.
+func sideBySide(c *tgframe.Container, cm judge.Compare, got, want, id string) {
+	ds := cm.SideBySide(got, want)
+	first := max(slices.IndexFunc(ds, func(d judge.DiffLine) bool { return !d.Same }), 0)
+	lo := max(first-diffBefore, 0)
+	hi := min(lo+diffLines, len(ds))
+	width := len(strconv.Itoa(hi))
+	var w, g strings.Builder
+	for _, d := range ds[lo:hi] {
+		mark := "  "
+		if !d.Same {
+			mark = "✗ "
+		}
+		fmt.Fprintf(&w, "%s%*d│ %s\n", mark, width, d.N, diffText(d.Want, d.HasWant))
+		fmt.Fprintf(&g, "%s%*d│ %s\n", mark, width, d.N, diffText(d.Got, d.HasGot))
+	}
+	tgcomp.Caption(c, fmt.Sprintf("第 %d–%d 行（共 %d 行），✗ 標出不同的行", lo+1, hi, len(ds)))
+	left, right := tgcomp.EqColumn2(c, &tgcomp.ColumnConf{ID: "diff_" + id})
+	tgcomp.Text(left, "預期輸出")
+	tgcomp.Code(left, w.String(), &tgcomp.CodeConf{Language: "text"})
+	tgcomp.Text(right, "你的輸出")
+	tgcomp.Code(right, g.String(), &tgcomp.CodeConf{Language: "text"})
+
+	full := tgcomp.Expand(c, "完整輸出", false, &tgcomp.ExpandConf{ID: "full_" + id})
+	tgcomp.Text(full, "預期輸出")
+	tgcomp.Code(full, cut(want), &tgcomp.CodeConf{Language: "text"})
+	tgcomp.Text(full, "你的輸出")
+	tgcomp.Code(full, cut(got), &tgcomp.CodeConf{Language: "text"})
+}
+
+// diffText is a line for sideBySide: cut short, or a note if missing.
+func diffText(s string, has bool) string {
+	if !has {
+		return "（沒有這行）"
+	}
+	if r := []rune(s); len(r) > diffWidth {
+		return string(r[:diffWidth]) + "…"
+	}
+	return s
 }
 
 func verdictName(v judge.Verdict) string {
